@@ -183,7 +183,7 @@ ui <- page_navbar(
         )
       )
       
-
+      
     )
   ),
   
@@ -749,7 +749,7 @@ server <- function(input, output, session) {
     cat("FIM DO RESUMO\n")
   }
   
-
+  
   
   # Renderização do sumário do modelo com ajuste para o GWR Multiscale
   output$summary_output_modelos <- renderPrint({

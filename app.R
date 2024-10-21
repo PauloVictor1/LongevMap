@@ -8,7 +8,7 @@ library(plotly)
 
 # Definindo a Interface do Usuário (UI)
 ui <- page_navbar(
-  title = "Mapa da Longevidade no Brasil",
+  title = "LongevMap",
   bg = "#2D89C8",
   inverse = TRUE,
   
@@ -210,26 +210,20 @@ server <- function(input, output, session) {
   #------------#------------#------------#------------------------------
   
   # Carregar as bases de dados
-  dados_brutos <- readRDS("/Users/paulovescovi/Documents/GitHub/Doutorado_Codigos/Mapa_Final3.rds")
-  dados_per_capita <- readRDS("/Users/paulovescovi/Documents/GitHub/Doutorado_Codigos/Mapa_Final_PC.rds")
-  
-  # Converter para o sistema de coordenadas WGS84
-  dados_brutos <- st_transform(dados_brutos, crs = 4326)
-  dados_per_capita <- st_transform(dados_per_capita, crs = 4326)
+  dados_brutos <- readRDS("data/Mapa_Final3.rds")
+  dados_per_capita <- readRDS("data/Mapa_Final_PC.rds")
   
   # Carregar os modelos salvos
-  model_linear_TIpc <- readRDS("model_linear_TIpc.rds")
-  model_SAR_TIpc <- readRDS("model_SAR_TIpc.rds")
-  model_GWR_TIpc <- readRDS("model_GWR_TIpc.rds")
+  model_linear_TIpc <- readRDS("models/model_linear_TIpc.rds")
+  model_SAR_TIpc <- readRDS("models/model_SAR_TIpc.rds")
+  model_GWR_TIpc <- readRDS("models/model_GWR_TIpc.rds")
   
-  model_linear_MII <- readRDS("model_linear_MII.rds")
-  model_SAR_MII <- readRDS("model_SAR_MII.rds")
-  model_GWR_MII <- readRDS("model_GWR_MII.rds")
+  model_linear_MII <- readRDS("models/model_linear_MII.rds")
+  model_SAR_MII <- readRDS("models/model_SAR_MII.rds")
+  model_GWR_MII <- readRDS("models/model_GWR_MII.rds")
   
   # Carregar o objeto sf para o mapa do modelo GWR Multiscale
-  #sf_objeto_GWR <- readRDS("sf_objeto_GWR_Media_Idade_Idosos.rds")
-  sf_objeto_GWR <- readRDS("sf_objeto_Dados_Painel_4.rds")
-  
+  sf_objeto_GWR <- readRDS("data/sf_objeto_Dados_Painel_4.rds")
   # Organizar em uma lista para facilitar o acesso
   models <- list(
     "TIpc" = list(

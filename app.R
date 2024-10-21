@@ -22,8 +22,8 @@ ui <- page_navbar(
       sidebar = sidebar(
         width = 250,
         selectInput("data_type", "Selecione a Base de Dados:", 
-                    choices = c("Dados Brutos", "Dados Per Capita"),
-                    selected = "Dados Brutos"),
+                    choices = c("Escolha uma opção...", "Dados Brutos", "Dados Per Capita"),
+                    selected = "Escolha uma opção..."),
         
         uiOutput("variavel_mapa_ui"),  # A lista de variáveis será gerada dinamicamente
         
@@ -245,6 +245,8 @@ server <- function(input, output, session) {
   
   # Observador para atualizar as variáveis de acordo com a base selecionada
   observe({
+    req(input$data_type != "Escolha uma opção...")  # Garante que uma base válida foi selecionada
+    
     dados <- if (input$data_type == "Dados Brutos") dados_brutos else dados_per_capita
     variaveis <- names(dados)[sapply(dados, is.numeric)]
     variaveis <- variaveis[!variaveis %in% c("Código UF", "Código Região")]
@@ -259,34 +261,47 @@ server <- function(input, output, session) {
   
   # Renderiza o mapa interativo no Painel 1
   output$mapa_interativo <- renderLeaflet({
-    req(input$variavel_mapa)  # Garante que input$variavel_mapa está disponível
-    
-    dados <- if (input$data_type == "Dados Brutos") dados_brutos else dados_per_capita
-    if (input$estado_mapa != "Todos os estados") {
-      dados <- dados %>% filter(Sigla_UF == input$estado_mapa)
-    }
-    
-    valores <- dados[[input$variavel_mapa]]
-    
-    pal <- colorNumeric(palette = "YlOrRd", domain = valores, na.color = "transparent")
-    
-    leaflet(data = dados) %>%
-      addProviderTiles("CartoDB.Positron") %>%
-      addPolygons(
-        fillColor = ~pal(valores),
-        fillOpacity = 0.7,
-        color = "white",
-        weight = 1,
-        popup = ~paste(
-          "<strong>Município:</strong>", dados$`Nome Município`, "<br>",
-          "<strong>Código Município:</strong>", dados$`Código Município`, "<br>",
-          "<strong>Estado:</strong>", dados$Sigla_UF, "<br>",
-          "<strong>", input$variavel_mapa, ":</strong>", valores
+    if (input$data_type == "Escolha uma opção...") {
+      # Renderiza um mapa básico com uma mensagem
+      leaflet() %>%
+        addProviderTiles("CartoDB.Positron") %>%
+        setView(lng = -55, lat = -14, zoom = 4) %>% # Centraliza o mapa no Brasil
+        addControl(
+          html = "<div style='font-size: 16px; text-align: center;'><strong>Por favor, selecione uma base de dados para visualizar o mapa.</strong></div>",
+          position = "topright"
         )
-      ) %>%
-      {if (input$show_legend) addLegend(., pal = pal, values = valores, 
-                                        title = input$variavel_mapa, position = "bottomright") else .}
+    } else {
+      req(input$variavel_mapa)  # Garante que input$variavel_mapa está disponível
+      
+      dados <- if (input$data_type == "Dados Brutos") dados_brutos else dados_per_capita
+      if (input$estado_mapa != "Todos os estados") {
+        dados <- dados %>% filter(Sigla_UF == input$estado_mapa)
+      }
+      
+      valores <- dados[[input$variavel_mapa]]
+      
+      pal <- colorNumeric(palette = "YlOrRd", domain = valores, na.color = "transparent")
+      
+      leaflet(data = dados) %>%
+        addProviderTiles("CartoDB.Positron") %>%
+        addPolygons(
+          fillColor = ~pal(valores),
+          fillOpacity = 0.7,
+          color = "white",
+          weight = 1,
+          popup = ~paste(
+            "<strong>Município:</strong>", dados$`Nome Município`, "<br>",
+            "<strong>Código Município:</strong>", dados$`Código Município`, "<br>",
+            "<strong>Estado:</strong>", dados$Sigla_UF, "<br>",
+            "<strong>", input$variavel_mapa, ":</strong>", valores
+          )
+        ) %>%
+        {if (input$show_legend) addLegend(., pal = pal, values = valores, 
+                                          title = input$variavel_mapa, position = "bottomright") else .}
+    }
   })
+  
+  
   
   #------------#------------#------------#------------------------------
   #-------------- PAIEL 2 - DATA EXPLORER LADO SERVIDOR ---------------- 

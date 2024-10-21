@@ -259,19 +259,30 @@ server <- function(input, output, session) {
     selectInput("variavel_mapa", "Selecione a Variável para o Mapa:", choices = NULL)
   })
   
-  # Renderiza o mapa interativo no Painel 1
+  # Renderiza o mapa base apenas uma vez
   output$mapa_interativo <- renderLeaflet({
+    leaflet() %>%
+      addProviderTiles("CartoDB.Positron") %>%
+      setView(lng = -55, lat = -14, zoom = 4)  # Centraliza o mapa no Brasil
+  })
+  
+  # Observa mudanças nos inputs e atualiza o mapa com leafletProxy
+  observeEvent({
+    input$data_type
+    input$variavel_mapa
+    input$estado_mapa
+    input$show_legend
+  }, {
     if (input$data_type == "Escolha uma opção...") {
-      # Renderiza um mapa básico com uma mensagem
-      leaflet() %>%
-        addProviderTiles("CartoDB.Positron") %>%
-        setView(lng = -55, lat = -14, zoom = 4) %>% # Centraliza o mapa no Brasil
+      leafletProxy("mapa_interativo") %>%
+        clearShapes() %>%
+        clearControls() %>%
         addControl(
           html = "<div style='font-size: 16px; text-align: center;'><strong>Por favor, selecione uma base de dados para visualizar o mapa.</strong></div>",
           position = "topright"
         )
     } else {
-      req(input$variavel_mapa)  # Garante que input$variavel_mapa está disponível
+      req(input$variavel_mapa)
       
       dados <- if (input$data_type == "Dados Brutos") dados_brutos else dados_per_capita
       if (input$estado_mapa != "Todos os estados") {
@@ -279,11 +290,11 @@ server <- function(input, output, session) {
       }
       
       valores <- dados[[input$variavel_mapa]]
-      
       pal <- colorNumeric(palette = "YlOrRd", domain = valores, na.color = "transparent")
       
-      leaflet(data = dados) %>%
-        addProviderTiles("CartoDB.Positron") %>%
+      leafletProxy("mapa_interativo", data = dados) %>%
+        clearShapes() %>%
+        clearControls() %>%
         addPolygons(
           fillColor = ~pal(valores),
           fillOpacity = 0.7,
@@ -296,7 +307,7 @@ server <- function(input, output, session) {
             "<strong>", input$variavel_mapa, ":</strong>", valores
           )
         ) %>%
-        {if (input$show_legend) addLegend(., pal = pal, values = valores, 
+        {if (input$show_legend) addLegend(., pal = pal, values = valores,
                                           title = input$variavel_mapa, position = "bottomright") else .}
     }
   })

@@ -267,6 +267,7 @@ server <- function(input, output, session) {
   })
   
   # Observa mudanças nos inputs e atualiza o mapa com leafletProxy
+  # Observa mudanças nos inputs e atualiza o mapa com leafletProxy
   observeEvent({
     input$data_type
     input$variavel_mapa
@@ -284,7 +285,10 @@ server <- function(input, output, session) {
     } else {
       req(input$variavel_mapa)
       
+      # Seleciona os dados de acordo com a base escolhida
       dados <- if (input$data_type == "Dados Brutos") dados_brutos else dados_per_capita
+      
+      # Filtra os dados se um estado específico foi selecionado
       if (input$estado_mapa != "Todos os estados") {
         dados <- dados %>% filter(Sigla_UF == input$estado_mapa)
       }
@@ -301,17 +305,47 @@ server <- function(input, output, session) {
           color = "white",
           weight = 1,
           popup = ~paste(
-            "<strong>Município:</strong>", dados$`Nome Município`, "<br>",
-            "<strong>Código Município:</strong>", dados$`Código Município`, "<br>",
-            "<strong>Estado:</strong>", dados$Sigla_UF, "<br>",
+            "<strong>Município:</strong>", `Nome Município`, "<br>",
+            "<strong>Código Município:</strong>", `Código Município`, "<br>",
+            "<strong>Estado:</strong>", Sigla_UF, "<br>",
             "<strong>", input$variavel_mapa, ":</strong>", valores
           )
         ) %>%
         {if (input$show_legend) addLegend(., pal = pal, values = valores,
                                           title = input$variavel_mapa, position = "bottomright") else .}
+      
+      # Reposicionar o mapa para o estado selecionado
+      if (input$estado_mapa != "Todos os estados") {
+        # Filtra os dados para o estado selecionado
+        estado_selecionado <- dados %>% filter(Sigla_UF == input$estado_mapa)
+        
+        # Verifica se existem dados após o filtro
+        if (nrow(estado_selecionado) > 0) {
+          # Transforma para WGS84
+          estado_selecionado <- st_transform(estado_selecionado, crs = 4326)
+          
+          # Calcula o bounding box
+          bbox <- st_bbox(estado_selecionado)
+          
+          # Imprime o bbox para depuração
+          print(bbox)
+          
+          # Reposiciona o mapa usando fitBounds
+          leafletProxy("mapa_interativo") %>%
+            fitBounds(lng1 = as.numeric(bbox["xmin"]), lat1 = as.numeric(bbox["ymin"]),
+                      lng2 = as.numeric(bbox["xmax"]), lat2 = as.numeric(bbox["ymax"]))
+        } else {
+          # Se não houver dados, centraliza o mapa no Brasil
+          leafletProxy("mapa_interativo") %>%
+            setView(lng = -55, lat = -14, zoom = 4)
+        }
+      } else {
+        # Se "Todos os estados" for selecionado, ajustar o mapa para mostrar o Brasil inteiro
+        leafletProxy("mapa_interativo") %>%
+          setView(lng = -55, lat = -14, zoom = 4)
+      }
     }
   })
-  
   
   
   #------------#------------#------------#------------------------------

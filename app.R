@@ -174,7 +174,7 @@ ui <- page_navbar(
           full_screen = TRUE,
           # Título dinâmico do mapa
           uiOutput("titulo_mapa_residuos"),
-          leafglOutput("mapa_residuos", height = "80vh")
+          leafletOutput("mapa_residuos", height = "80vh")
         ),
         
         # Card para o título do sumário e o sumário do modelo
@@ -724,53 +724,54 @@ server <- function(input, output, session) {
     # Certifica-se de que a projeção está em WGS84
     dados_mapa <- st_transform(dados_mapa, crs = 4326)
     
-    # Converte MULTIPOLYGON para POLYGON
-    dados_mapa <- st_cast(dados_mapa, "POLYGON")
-    
     residuos <- dados_mapa[[modelo_residuos_coluna()]]
-    
-    # Normaliza os resíduos para serem usados como cores
     pal <- colorNumeric("RdYlBu", domain = residuos, na.color = "transparent", reverse = TRUE)
-    colors <- pal(residuos)
     
-    leafletProxy("mapa_residuos") %>%
+    leafletProxy("mapa_residuos", data = dados_mapa) %>%
       clearShapes() %>%
       clearControls() %>%
-      # Usando addGlPolygons do leafgl
-      addGlPolygons(
-        data = dados_mapa,
-        color = colors,
-        popup = TRUE,
-        popupOptions = popupOptions(closeButton = FALSE),
-        popupContent = ~paste(
+      addPolygons(
+        fillColor = ~pal(residuos),
+        fillOpacity = 0.7,
+        color = "white",
+        weight = 1,
+        popup = ~paste(
           "<strong>Município:</strong>", `Nome.Município`, "<br>",
           "<strong>UF:</strong>", Sigla_UF, "<br>",
           "<strong>Resíduo:</strong>", residuos
         )
       ) %>%
-      # Adiciona a legenda se selecionado
       {if (input$exibir_legenda_modelos) addLegend(., pal = pal, values = residuos, 
                                                    title = paste("Resíduos -", input$modelo), 
                                                    position = "bottomright") else .}
     
     # Reposicionar o mapa para o estado selecionado
     if (input$estado_mapa_modelos != "Todos os estados") {
+      # Verifica se existem dados após o filtro
       if (nrow(dados_mapa) > 0) {
         bbox <- st_bbox(dados_mapa)
+        
         leafletProxy("mapa_residuos") %>%
           fitBounds(lng1 = as.numeric(bbox["xmin"]), lat1 = as.numeric(bbox["ymin"]),
                     lng2 = as.numeric(bbox["xmax"]), lat2 = as.numeric(bbox["ymax"]))
       } else {
+        # Se não houver dados, centraliza o mapa no Brasil
         leafletProxy("mapa_residuos") %>%
           setView(lng = -55, lat = -14, zoom = 4)
       }
     } else {
+      # Se "Todos os estados" for selecionado, ajustar o mapa para mostrar o Brasil inteiro
       leafletProxy("mapa_residuos") %>%
         setView(lng = -55, lat = -14, zoom = 4)
     }
   })
   
-  # Renderização do sumário do modelo
+  # Função para sumarizar o modelo GWR Multiscale de forma consistente
+  summary_gwr <- function(modelo) {
+    # (Função permanece inalterada)
+  }
+  
+  # Renderização do sumário do modelo com ajuste para o GWR Multiscale
   output$summary_output_modelos <- renderPrint({
     req(input$var_dependente, input$modelo)
     

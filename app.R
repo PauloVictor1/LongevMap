@@ -174,7 +174,7 @@ ui <- page_navbar(
           full_screen = TRUE,
           # Título dinâmico do mapa
           uiOutput("titulo_mapa_residuos"),
-          leafletOutput("mapa_residuos", height = "80vh")
+          leafglOutput("mapa_residuos", height = "80vh")
         ),
         
         # Card para o título do sumário e o sumário do modelo

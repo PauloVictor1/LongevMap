@@ -6,6 +6,9 @@ library(sf)
 library(DT)
 library(plotly)
 
+library(leafgl)
+
+
 # Definindo a Interface do Usuário (UI)
 ui <- page_navbar(
   title = "LongevMap",
@@ -695,37 +698,91 @@ server <- function(input, output, session) {
     HTML(paste0("<h4>", titulo_sumario, "</h4>"))
   })
   
-  # Renderização do mapa de resíduos
+  # Renderiza o mapa base apenas uma vez
   output$mapa_residuos <- renderLeaflet({
+    leaflet() %>%
+      addProviderTiles("CartoDB.Positron") %>%
+      setView(lng = -55, lat = -14, zoom = 4)  # Centraliza o mapa no Brasil
+  })
+  
+  # Observa mudanças nos inputs e atualiza o mapa com leafletProxy
+  observeEvent({
+    input$var_dependente
+    input$modelo
+    input$estado_mapa_modelos
+    input$exibir_legenda_modelos
+  }, {
     req(modelo_residuos_coluna())
     
+    # Filtra os dados conforme o estado selecionado
     dados_mapa <- if (input$estado_mapa_modelos != "Todos os estados") {
       sf_objeto_GWR %>% filter(Sigla_UF == input$estado_mapa_modelos)
     } else {
       sf_objeto_GWR
     }
     
-    residuos <- dados_mapa[[modelo_residuos_coluna()]]
-    pal <- colorNumeric("RdYlBu", domain = residuos, na.color = "transparent", reverse = TRUE)
+    # Certifica-se de que a projeção está em WGS84
+    dados_mapa <- st_transform(dados_mapa, crs = 4326)
     
-    leaflet(data = dados_mapa) %>%
-      addProviderTiles("CartoDB.Positron") %>%
-      addPolygons(
-        fillColor = ~pal(residuos),
-        fillOpacity = 0.7,
-        color = "white",
-        weight = 1,
-        popup = ~paste(
-          "<strong>Município:</strong>", Nome.Município, "<br>",
+    # Converte MULTIPOLYGON para POLYGON
+    dados_mapa <- st_cast(dados_mapa, "POLYGON")
+    
+    residuos <- dados_mapa[[modelo_residuos_coluna()]]
+    
+    # Normaliza os resíduos para serem usados como cores
+    pal <- colorNumeric("RdYlBu", domain = residuos, na.color = "transparent", reverse = TRUE)
+    colors <- pal(residuos)
+    
+    leafletProxy("mapa_residuos") %>%
+      clearShapes() %>%
+      clearControls() %>%
+      # Usando addGlPolygons do leafgl
+      addGlPolygons(
+        data = dados_mapa,
+        color = colors,
+        popup = TRUE,
+        popupOptions = popupOptions(closeButton = FALSE),
+        popupContent = ~paste(
+          "<strong>Município:</strong>", `Nome.Município`, "<br>",
           "<strong>UF:</strong>", Sigla_UF, "<br>",
           "<strong>Resíduo:</strong>", residuos
         )
       ) %>%
+      # Adiciona a legenda se selecionado
       {if (input$exibir_legenda_modelos) addLegend(., pal = pal, values = residuos, 
                                                    title = paste("Resíduos -", input$modelo), 
                                                    position = "bottomright") else .}
+    
+    # Reposicionar o mapa para o estado selecionado
+    if (input$estado_mapa_modelos != "Todos os estados") {
+      if (nrow(dados_mapa) > 0) {
+        bbox <- st_bbox(dados_mapa)
+        leafletProxy("mapa_residuos") %>%
+          fitBounds(lng1 = as.numeric(bbox["xmin"]), lat1 = as.numeric(bbox["ymin"]),
+                    lng2 = as.numeric(bbox["xmax"]), lat2 = as.numeric(bbox["ymax"]))
+      } else {
+        leafletProxy("mapa_residuos") %>%
+          setView(lng = -55, lat = -14, zoom = 4)
+      }
+    } else {
+      leafletProxy("mapa_residuos") %>%
+        setView(lng = -55, lat = -14, zoom = 4)
+    }
   })
   
+  # Renderização do sumário do modelo
+  output$summary_output_modelos <- renderPrint({
+    req(input$var_dependente, input$modelo)
+    
+    var_dep <- ifelse(input$var_dependente == "Total de Idosos per capita (TIpc)", "TIpc", "MII")
+    modelo_selecionado <- models[[var_dep]][[input$modelo]]
+    
+    if (input$modelo == "GWR Multiscale") {
+      summary_gwr(modelo_selecionado)
+    } else {
+      summary(modelo_selecionado)
+    }
+  })
   
   # Função para sumarizar o modelo GWR Multiscale de forma consistente
   summary_gwr <- function(modelo) {
@@ -824,7 +881,6 @@ server <- function(input, output, session) {
       summary(modelo_selecionado)
     }
   })
-  
   
 }
 

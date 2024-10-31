@@ -890,8 +890,18 @@ server <- function(input, output, session) {
   }
   
   
+  # Função para sumarizar o modelo SAR de forma simplificada
+  summary_sarlm <- function(modelo) {
+    cat("Resumo do Modelo SAR (Spatial Autoregressive Model)\n")
+    cat("--------------------------------------------------\n")
+    
+    summary(modelo)
+    
+  }
   
-  # Renderização do sumário do modelo com ajuste para o GWR Multiscale
+  
+  
+  # Renderização do sumário do modelo com ajuste para o GWR Multiscale e SAR
   output$summary_output_modelos <- renderPrint({
     req(input$var_dependente != "Escolha uma opção...", input$modelo)
     
@@ -904,10 +914,14 @@ server <- function(input, output, session) {
     
     if (input$modelo == "GWR Multiscale") {
       summary_gwr(modelo_selecionado)
+    } else if (input$modelo == "Regressão SAR") {
+      summary_sarlm(modelo_selecionado)
     } else {
-      summary(modelo_selecionado)
+      print(summary(modelo_selecionado))
     }
   })
+  
+  
   
   
   

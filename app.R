@@ -151,9 +151,11 @@ ui <- page_navbar(
       sidebar = sidebar(
         width = 250,
         selectInput("var_dependente", "Selecione a Variável Dependente:", 
-                    choices = c("Total de Idosos per capita (TIpc)", 
+                    choices = c("Escolha uma opção...", 
+                                "Total de Idosos per capita (TIpc)", 
                                 "Mediana de Idade dos Idosos (MII)",
-                                "Expectativa de Vida ao Nascer (EdVN)")),
+                                "Expectativa de Vida ao Nascer (EdVN)"),
+                    selected = "Escolha uma opção..."),
         
         selectInput("modelo", "Selecione o Modelo:", 
                     choices = c("Regressão Linear", "Regressão SAR", "GWR Multiscale")),
@@ -680,7 +682,7 @@ server <- function(input, output, session) {
   
   # Reactive para definir a coluna de resíduos com base na variável dependente e no modelo selecionado
   modelo_residuos_coluna <- reactive({
-    req(input$var_dependente, input$modelo)
+    req(input$var_dependente != "Escolha uma opção...", input$modelo)
     
     # Seleciona o nome da coluna de resíduos com base nos inputs
     if (input$var_dependente == "Total de Idosos per capita (TIpc)") {
@@ -704,17 +706,25 @@ server <- function(input, output, session) {
 
   # Título dinâmico para o mapa
   output$titulo_mapa_residuos <- renderUI({
-    req(input$modelo, input$var_dependente)
-    titulo_mapa <- paste("Resíduos do modelo de regressão:", input$modelo, "-", input$var_dependente)
-    HTML(paste0("<h4>", titulo_mapa, "</h4>"))
+    if (input$var_dependente == "Escolha uma opção...") {
+      NULL  # Não exibe título
+    } else {
+      titulo_mapa <- paste("Resíduos do modelo de regressão:", input$modelo, "-", input$var_dependente)
+      HTML(paste0("<h4>", titulo_mapa, "</h4>"))
+    }
   })
+  
   
   # Título dinâmico para o sumário do modelo
   output$titulo_summary_modelos <- renderUI({
-    req(input$modelo, input$var_dependente)
-    titulo_sumario <- paste("Resumo do modelo de regressão criado:", input$modelo, "-", input$var_dependente)
-    HTML(paste0("<h4>", titulo_sumario, "</h4>"))
+    if (input$var_dependente == "Escolha uma opção...") {
+      NULL  # Não exibe título
+    } else {
+      titulo_sumario <- paste("Resumo do modelo de regressão criado:", input$modelo, "-", input$var_dependente)
+      HTML(paste0("<h4>", titulo_sumario, "</h4>"))
+    }
   })
+  
   
   
   # Renderiza o mapa base apenas uma vez
@@ -731,6 +741,15 @@ server <- function(input, output, session) {
     input$estado_mapa_modelos
     input$exibir_legenda_modelos
   }, {
+    if (input$var_dependente == "Escolha uma opção...") {
+      leafletProxy("mapa_residuos") %>%
+        clearShapes() %>%
+        clearControls() %>%
+        addControl(
+          html = "<div style='font-size: 16px; text-align: center;'><strong>Por favor, selecione uma variável dependente para visualizar o mapa.</strong></div>",
+          position = "topright"
+        )
+    } else {
     req(modelo_residuos_coluna())
     
     # Filtra os dados conforme o estado selecionado
@@ -783,6 +802,8 @@ server <- function(input, output, session) {
       leafletProxy("mapa_residuos") %>%
         setView(lng = -55, lat = -14, zoom = 4)
     }
+  }
+    
   })
   
   
@@ -872,7 +893,7 @@ server <- function(input, output, session) {
   
   # Renderização do sumário do modelo com ajuste para o GWR Multiscale
   output$summary_output_modelos <- renderPrint({
-    req(input$var_dependente, input$modelo)
+    req(input$var_dependente != "Escolha uma opção...", input$modelo)
     
     var_dep <- switch(input$var_dependente,
                       "Total de Idosos per capita (TIpc)" = "TIpc",
@@ -887,6 +908,7 @@ server <- function(input, output, session) {
       summary(modelo_selecionado)
     }
   })
+  
   
   
 }

@@ -151,7 +151,9 @@ ui <- page_navbar(
       sidebar = sidebar(
         width = 250,
         selectInput("var_dependente", "Selecione a Variável Dependente:", 
-                    choices = c("Total de Idosos per capita (TIpc)", "Mediana de Idade dos Idosos (MII)")),
+                    choices = c("Total de Idosos per capita (TIpc)", 
+                                "Mediana de Idade dos Idosos (MII)",
+                                "Expectativa de Vida ao Nascer (EdVN)")),
         
         selectInput("modelo", "Selecione o Modelo:", 
                     choices = c("Regressão Linear", "Regressão SAR", "GWR Multiscale")),
@@ -225,8 +227,14 @@ server <- function(input, output, session) {
   model_SAR_MII <- readRDS("models/model_SAR_MII.rds")
   model_GWR_MII <- readRDS("models/model_GWR_MII.rds")
   
+  # Carregar os modelos da Expectativa de Vida ao Nascer (EdVN)
+  model_linear_EdVN <- readRDS("models/model_linear_EDV.rds")
+  model_SAR_EdVN <- readRDS("models/model_SAR_EDV.rds")
+  model_GWR_EdVN <- readRDS("models/model_GWR_MEDV.rds")
+  
   # Carregar o objeto sf para o mapa do modelo GWR Multiscale
   sf_objeto_GWR <- readRDS("data/sf_objeto_Dados_Painel_4.rds")
+  
   # Organizar em uma lista para facilitar o acesso
   models <- list(
     "TIpc" = list(
@@ -238,6 +246,11 @@ server <- function(input, output, session) {
       "Regressão Linear" = model_linear_MII,
       "Regressão SAR" = model_SAR_MII,
       "GWR Multiscale" = model_GWR_MII
+    ),
+    "EdVN" = list(
+      "Regressão Linear" = model_linear_EdVN,
+      "Regressão SAR" = model_SAR_EdVN,
+      "GWR Multiscale" = model_GWR_EdVN
     )
   )
   
@@ -680,9 +693,15 @@ server <- function(input, output, session) {
              "Regressão Linear" = "model_Linear_Res_MII",
              "Regressão SAR" = "model_SAR_Res_MII",
              "GWR Multiscale" = "model_GWR.MULT_Res_MII")
+    } else if (input$var_dependente == "Expectativa de Vida ao Nascer (EdVN)") {
+      switch(input$modelo,
+             "Regressão Linear" = "model_linear_EdVN",
+             "Regressão SAR" = "model_SAR_EdVN",
+             "GWR Multiscale" = "model_GWR_EdVN")
     }
   })
   
+
   # Título dinâmico para o mapa
   output$titulo_mapa_residuos <- renderUI({
     req(input$modelo, input$var_dependente)
@@ -696,6 +715,7 @@ server <- function(input, output, session) {
     titulo_sumario <- paste("Resumo do modelo de regressão criado:", input$modelo, "-", input$var_dependente)
     HTML(paste0("<h4>", titulo_sumario, "</h4>"))
   })
+  
   
   # Renderiza o mapa base apenas uma vez
   output$mapa_residuos <- renderLeaflet({
@@ -765,24 +785,6 @@ server <- function(input, output, session) {
     }
   })
   
-  # Função para sumarizar o modelo GWR Multiscale de forma consistente
-  summary_gwr <- function(modelo) {
-    # (Função permanece inalterada)
-  }
-  
-  # Renderização do sumário do modelo com ajuste para o GWR Multiscale
-  output$summary_output_modelos <- renderPrint({
-    req(input$var_dependente, input$modelo)
-    
-    var_dep <- ifelse(input$var_dependente == "Total de Idosos per capita (TIpc)", "TIpc", "MII")
-    modelo_selecionado <- models[[var_dep]][[input$modelo]]
-    
-    if (input$modelo == "GWR Multiscale") {
-      summary_gwr(modelo_selecionado)
-    } else {
-      summary(modelo_selecionado)
-    }
-  })
   
   # Função para sumarizar o modelo GWR Multiscale de forma consistente
   summary_gwr <- function(modelo) {
@@ -872,7 +874,11 @@ server <- function(input, output, session) {
   output$summary_output_modelos <- renderPrint({
     req(input$var_dependente, input$modelo)
     
-    var_dep <- ifelse(input$var_dependente == "Total de Idosos per capita (TIpc)", "TIpc", "MII")
+    var_dep <- switch(input$var_dependente,
+                      "Total de Idosos per capita (TIpc)" = "TIpc",
+                      "Mediana de Idade dos Idosos (MII)" = "MII",
+                      "Expectativa de Vida ao Nascer (EdVN)" = "EdVN")
+    
     modelo_selecionado <- models[[var_dep]][[input$modelo]]
     
     if (input$modelo == "GWR Multiscale") {
@@ -881,6 +887,7 @@ server <- function(input, output, session) {
       summary(modelo_selecionado)
     }
   })
+  
   
 }
 

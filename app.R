@@ -78,13 +78,13 @@ ui <- page_navbar(
         width = 9,
         
         # Primeiro card: DataTable_DE_UI
-        card(
+        bslib::card(
           full_screen = TRUE,
           uiOutput("DataTable_DE_UI")
         ),
         
         # Segundo card: plot_DE
-        card(
+        bslib::card(
           full_screen = TRUE,
           plotly::plotlyOutput("plot_DE")
         )
@@ -125,13 +125,13 @@ ui <- page_navbar(
         width = 9,
         
         # Card para o gráfico
-        card(
+        bslib::card(
           full_screen = TRUE,
           plotly::plotlyOutput("scatterpolar_rm")
         ),
         
         # Card para a tabela de informações de valores originais, mínimo e máximo
-        card(
+        bslib::card(
           full_screen = TRUE,
           DT::dataTableOutput("informacao_tabela_RM")
         )
@@ -170,7 +170,7 @@ ui <- page_navbar(
         width = 9,
         
         # Card para o título do mapa e o mapa interativo
-        card(
+        bslib::card(
           full_screen = TRUE,
           # Título dinâmico do mapa
           uiOutput("titulo_mapa_residuos"),
@@ -178,7 +178,7 @@ ui <- page_navbar(
         ),
         
         # Card para o título do sumário e o sumário do modelo
-        card(
+        bslib::card(
           full_screen = TRUE,
           # Título dinâmico para o sumário do modelo
           uiOutput("titulo_summary_modelos"),
@@ -659,7 +659,6 @@ server <- function(input, output, session) {
     
     DT::datatable(df_RM_Info(), options = list(pageLength = 5, scrollX = TRUE))
   })
-  
   
   
   #------------#------------#------------#------------------------------ 

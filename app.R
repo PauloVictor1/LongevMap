@@ -215,38 +215,35 @@ ui <- page_navbar(
   #------------#------------#------------#------------------------------
   
   nav_panel(
-    title = "Análise de Documento PDF",  # Título do Painel 5
-    layout_sidebar(
-      sidebar = sidebar(
-        width = 250,
-        fileInput("pdfFile", "Faça upload do arquivo PDF", accept = ".pdf")
-      ),
-      mainPanel(
-        width = 9,
-        # Resumo para Pessoas Idosas com botão de download
-        h3("Resumo para Pessoas Idosas"),
-        shinycssloaders::withSpinner(verbatimTextOutput("elderly_summary")),
-        
-        # Botão de Download
-        shinyjs::disabled(downloadButton("download_elderly_summary", "Download Resumo para Pessoas Idosas")),
-        br(), br(),
-        
-        # Botão para gerar nuvem de palavras e gráfico
-        shinyjs::disabled(actionButton("generate_plots", "Gerar Nuvem de Palavras e Gráfico", class = "btn-primary")),
-        br(), br(),
-        
-        # Nuvem de Palavras
-        h3("Nuvem de Palavras"),
-        shinycssloaders::withSpinner(wordcloud2::wordcloud2Output("wordcloud")),
-        br(), br(),
-        
-        # Gráfico de Recorrência por Palavras
-        h3("Gráfico de Recorrência por Palavras"),
-        shinycssloaders::withSpinner(plotOutput("word_freq_plot")),
-        br(), br()
-      )
+    title = "Análise de Documentos dos CMIs",  # Título do Painel 5
+    fluidPage(
+      useShinyjs(),  # Inicializar shinyjs no UI
+      # File input na tela principal
+      fileInput("pdfFile", h3("Faça upload do arquivo PDF"), accept = ".pdf"),
+      # Resumo para Pessoas Idosas com botão de download
+      h3("Resumo o documento encaminhado do ponto de vista de uma pessoa idosa"),
+      shinycssloaders::withSpinner(verbatimTextOutput("elderly_summary")),
+      
+      # Botão de Download (inicialmente desabilitado)
+      shinyjs::disabled(downloadButton("download_elderly_summary", "Download Resumo para Pessoas Idosas")),
+      br(), br(),
+      
+      # Botão para gerar nuvem de palavras e gráfico (inicialmente desabilitado)
+      shinyjs::disabled(actionButton("generate_plots", "Gerar Nuvem de Palavras e Gráfico", class = "btn-primary")),
+      br(), br(),
+      
+      # Nuvem de Palavras
+      h3("Nuvem de Palavras"),
+      shinycssloaders::withSpinner(wordcloud2::wordcloud2Output("wordcloud")),
+      br(), br(),
+      
+      # Gráfico de Recorrência por Palavras
+      h3("Gráfico de Recorrência por Palavras"),
+      shinycssloaders::withSpinner(plotOutput("word_freq_plot")),
+      br(), br()
     )
   ),
+  
   
   # Espaçador e menu de links
   nav_spacer(),
@@ -945,6 +942,9 @@ server <- function(input, output, session) {
   # Reactive expression para ler o texto do PDF
   pdfText <- reactive({
     req(input$pdfFile)
+    # Desabilitar os botões ao iniciar o processamento de um novo arquivo
+    shinyjs::disable("download_elderly_summary")
+    shinyjs::disable("generate_plots")
     texto <- pdftools::pdf_text(input$pdfFile$datapath)
     # Excluir o arquivo após a leitura
     file.remove(input$pdfFile$datapath)
@@ -956,11 +956,16 @@ server <- function(input, output, session) {
     texto <- pdfText()
     summaries$elderly_summary <- generate_elderly_summary(texto)
     
-    # Habilitar o botão de download após a geração do resumo
-    shinyjs::enable("download_elderly_summary")
-    
-    # Habilitar o botão para gerar nuvem de palavras e gráfico
-    shinyjs::enable("generate_plots")
+    # Verificar se o resumo foi gerado com sucesso
+    if (!is.null(summaries$elderly_summary) && summaries$elderly_summary != "") {
+      # Habilitar o botão de download após a geração do resumo
+      shinyjs::enable("download_elderly_summary")
+      # Habilitar o botão para gerar nuvem de palavras e gráfico
+      shinyjs::enable("generate_plots")
+    } else {
+      # Mostrar notificação de erro
+      showNotification("Erro ao gerar o resumo. Por favor, tente novamente.", type = "error")
+    }
   })
   
   # Observador para gerar a nuvem de palavras e o gráfico quando o botão é clicado
@@ -983,10 +988,10 @@ server <- function(input, output, session) {
           list(role = "user", content = paste("Resuma o seguinte texto em formato de lista com bullet points considerando o ponto de vista de uma pessoa idosa:\n\n", text))
         ),
         temperature = 0.5,
-        max_tokens = 300  # Ajustado para evitar truncamento
+        max_tokens = 500  # Ajustado para o tamanho do resumo
       )
     }, error = function(e) {
-      return(paste("Erro ao gerar o resumo para pessoas idosas:", e$message))
+      return(NULL)
     })
     
     if (is.list(response) && !is.null(response$choices) && length(response$choices) > 0) {
@@ -996,10 +1001,10 @@ server <- function(input, output, session) {
         content <- trimws(content)
         return(content)
       } else {
-        return("Formato de resposta inesperado na geração do resumo para pessoas idosas.")
+        return(NULL)
       }
     } else {
-      return(response)  # Retorna a mensagem de erro
+      return(NULL)
     }
   }
   

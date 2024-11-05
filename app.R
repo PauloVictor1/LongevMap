@@ -15,6 +15,8 @@ library(ggplot2)
 library(tidytext)
 library(stopwords)
 library(shinyjs)
+library(spdep)
+library(spatialreg)
 
 # Limitar o tamanho máximo do arquivo de upload para 10 MB
 options(shiny.maxRequestSize = 10 * 1024^2)  # 10 MB
@@ -899,15 +901,6 @@ server <- function(input, output, session) {
     cat("FIM DO RESUMO\n")
   }
   
-  # Função para sumarizar o modelo SAR de forma simplificada
-  summary_sarlm <- function(modelo) {
-    cat("Resumo do Modelo SAR (Spatial Autoregressive Model)\n")
-    cat("--------------------------------------------------\n")
-    
-    summary(modelo)
-    
-  }
-  
   # Renderização do sumário do modelo com ajuste para o GWR Multiscale e SAR
   output$summary_output_modelos <- renderPrint({
     req(input$var_dependente != "Escolha uma opção...", input$modelo)
@@ -921,8 +914,6 @@ server <- function(input, output, session) {
     
     if (input$modelo == "GWR Multiscale") {
       summary_gwr(modelo_selecionado)
-    } else if (input$modelo == "Regressão SAR") {
-      summary_sarlm(modelo_selecionado)
     } else {
       print(summary(modelo_selecionado))
     }

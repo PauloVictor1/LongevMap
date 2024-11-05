@@ -24,11 +24,6 @@ options(shiny.maxRequestSize = 10 * 1024^2)  # 10 MB
 # Acessar a chave de API da OpenAI
 openai_api_key <- Sys.getenv("OPENAI_API_KEY")
 
-# Verificar se a chave está disponível
-if (openai_api_key == "") {
-  stop("A chave de API da OpenAI não está definida. Por favor, defina-a no arquivo .Renviron.")
-}
-
 # Definindo a Interface do Usuário (UI)
 ui <- page_navbar(
   title = "LongevMap",

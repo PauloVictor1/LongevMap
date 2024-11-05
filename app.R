@@ -1,3 +1,4 @@
+# Carregando as bibliotecas necessárias
 library(shiny)
 library(bslib)
 library(leaflet)
@@ -5,9 +6,26 @@ library(dplyr)
 library(sf)
 library(DT)
 library(plotly)
-
 library(leafgl)
+library(pdftools)
+library(openai)
+library(shinycssloaders)
+library(wordcloud2)
+library(ggplot2)
+library(tidytext)
+library(stopwords)
+library(shinyjs)
 
+# Limitar o tamanho máximo do arquivo de upload para 10 MB
+options(shiny.maxRequestSize = 10 * 1024^2)  # 10 MB
+
+# Acessar a chave de API da OpenAI
+openai_api_key <- Sys.getenv("OPENAI_API_KEY")
+
+# Verificar se a chave está disponível
+if (openai_api_key == "") {
+  stop("A chave de API da OpenAI não está definida. Por favor, defina-a no arquivo .Renviron.")
+}
 
 # Definindo a Interface do Usuário (UI)
 ui <- page_navbar(
@@ -16,7 +34,7 @@ ui <- page_navbar(
   inverse = TRUE,
   
   #------------#------------#------------#------------------------------
-  #-------------- PAIEL 1 - Mapa Interativo LADO INTERFACE ------------- 
+  #-------------- PAINEL 1 - Mapa Interativo LADO INTERFACE -------------
   #------------#------------#------------#------------------------------
   
   nav_panel(
@@ -24,15 +42,15 @@ ui <- page_navbar(
     layout_sidebar(
       sidebar = sidebar(
         width = 250,
-        selectInput("data_type", "Selecione a Base de Dados:", 
+        selectInput("data_type", "Selecione a Base de Dados:",
                     choices = c("Escolha uma opção...", "Dados Brutos", "Dados Per Capita"),
                     selected = "Escolha uma opção..."),
         
         uiOutput("variavel_mapa_ui"),  # A lista de variáveis será gerada dinamicamente
         
-        selectInput("estado_mapa", "Selecione o Estado:", 
-                    choices = c("Todos os estados", "AC", "AL", "AM", "AP", "BA", "CE", "DF", "ES", 
-                                "GO", "MA", "MG", "MS", "MT", "PA", "PB", "PE", "PI", "PR", "RJ", 
+        selectInput("estado_mapa", "Selecione o Estado:",
+                    choices = c("Todos os estados", "AC", "AL", "AM", "AP", "BA", "CE", "DF", "ES",
+                                "GO", "MA", "MG", "MS", "MT", "PA", "PB", "PE", "PI", "PR", "RJ",
                                 "RN", "RO", "RR", "RS", "SC", "SE", "SP", "TO"),
                     selected = "SP"),
         
@@ -47,7 +65,7 @@ ui <- page_navbar(
   ),
   
   #------------#------------#------------#------------------------------
-  #-------------- PAIEL 2 - DATA EXPLORER LADO INTERFACE --------------- 
+  #-------------- PAINEL 2 - DATA EXPLORER LADO INTERFACE ---------------
   #------------#------------#------------#------------------------------
   
   nav_panel(
@@ -55,23 +73,23 @@ ui <- page_navbar(
     layout_sidebar(
       sidebar = sidebar(
         width = 250,
-        selectInput("data_type_DE", 
-                    "Selecione a Base de Dados para a tabela ao lado:", 
-                    choices = c("Escolha uma opção...", "Dados_Brutos", "Dados_Per_Capita"), 
-                    selected = "Escolha uma opção..."),  
+        selectInput("data_type_DE",
+                    "Selecione a Base de Dados para a tabela ao lado:",
+                    choices = c("Escolha uma opção...", "Dados_Brutos", "Dados_Per_Capita"),
+                    selected = "Escolha uma opção..."),
         
-        uiOutput("variavel_mapa_ui_DE"),  
+        uiOutput("variavel_mapa_ui_DE"),
         
-        selectInput("estado_mapa_DE", "Selecione o Estado:", 
-                    choices = c("AC", "AL", "AM", "AP", "BA", "CE", "DF", "ES", 
-                                "GO", "MA", "MG", "MS", "MT", "PA", "PB", "PE", "PI", "PR", "RJ", 
+        selectInput("estado_mapa_DE", "Selecione o Estado:",
+                    choices = c("AC", "AL", "AM", "AP", "BA", "CE", "DF", "ES",
+                                "GO", "MA", "MG", "MS", "MT", "PA", "PB", "PE", "PI", "PR", "RJ",
                                 "RN", "RO", "RR", "RS", "SC", "SE", "SP", "TO"),
                     selected = NULL,
                     multiple = TRUE),
-        conditionalPanel(condition = "input.estado_mapa_DE != ''", 
-                         selectizeInput("cidades_DE", 
-                                        label = "Selecione o município", 
-                                        choices = NULL, 
+        conditionalPanel(condition = "input.estado_mapa_DE != ''",
+                         selectizeInput("cidades_DE",
+                                        label = "Selecione o município",
+                                        choices = NULL,
                                         multiple = TRUE))
       ),
       mainPanel(
@@ -92,32 +110,32 @@ ui <- page_navbar(
     )
   ),
   
-  #------------#------------#------------#------------------------------ 
-  #------------ PAIEL 3 - RAIO X MUNICIPAL  LADO INTERFACE ------------- 
-  #------------#------------#------------#------------------------------ 
+  #------------#------------#------------#------------------------------
+  #------------ PAINEL 3 - RAIO X MUNICIPAL  LADO INTERFACE -------------
+  #------------#------------#------------#------------------------------
   
   nav_panel(
     title = "Raio-X Municipal",
     layout_sidebar(
       sidebar = sidebar(
         width = 250,
-        selectInput("data_type_RM", 
-                    "Selecione a Base de Dados para a tabela ao lado:", 
-                    choices = c("Escolha uma opção...", "Dados Brutos", "Dados Per Capita"), 
-                    selected = "Escolha uma opção..."),  
+        selectInput("data_type_RM",
+                    "Selecione a Base de Dados para a tabela ao lado:",
+                    choices = c("Escolha uma opção...", "Dados Brutos", "Dados Per Capita"),
+                    selected = "Escolha uma opção..."),
         
-        uiOutput("variavel_mapa_ui_RM"),  
+        uiOutput("variavel_mapa_ui_RM"),
         
-        selectInput("estado_mapa_RM", "Selecione o Estado:", 
-                    choices = c("AC", "AL", "AM", "AP", "BA", "CE", "DF", "ES", 
-                                "GO", "MA", "MG", "MS", "MT", "PA", "PB", "PE", "PI", "PR", "RJ", 
+        selectInput("estado_mapa_RM", "Selecione o Estado:",
+                    choices = c("AC", "AL", "AM", "AP", "BA", "CE", "DF", "ES",
+                                "GO", "MA", "MG", "MS", "MT", "PA", "PB", "PE", "PI", "PR", "RJ",
                                 "RN", "RO", "RR", "RS", "SC", "SE", "SP", "TO"),
                     selected = NULL,
                     multiple = TRUE),
-        conditionalPanel(condition = "input.estado_mapa_RM != ''", 
-                         selectizeInput("cidades_RM", 
-                                        label = "Selecione o município", 
-                                        choices = NULL, 
+        conditionalPanel(condition = "input.estado_mapa_RM != ''",
+                         selectizeInput("cidades_RM",
+                                        label = "Selecione o município",
+                                        choices = NULL,
                                         multiple = TRUE))
       ),
       
@@ -139,30 +157,28 @@ ui <- page_navbar(
     )
   ),
   
+  #------------#------------#------------#------------------------------
+  #------------ PAINEL 4 - Modelos Regressão LADO INTERFACE -------------
+  #------------#------------#------------#------------------------------
   
-  #------------#------------#------------#------------------------------ 
-  #------------ PAIEL 4 - Modelos Regressão LADO INTERFACE ------------- 
-  #------------#------------#------------#------------------------------ 
-  
-  # Painel 4: Modelos - Configuração da Interface
   nav_panel(
     title = "Modelos",
     layout_sidebar(
       sidebar = sidebar(
         width = 250,
-        selectInput("var_dependente", "Selecione a Variável Dependente:", 
-                    choices = c("Escolha uma opção...", 
-                                "Total de Idosos per capita (TIpc)", 
+        selectInput("var_dependente", "Selecione a Variável Dependente:",
+                    choices = c("Escolha uma opção...",
+                                "Total de Idosos per capita (TIpc)",
                                 "Mediana de Idade dos Idosos (MII)",
                                 "Expectativa de Vida ao Nascer (EdVN)"),
                     selected = "Escolha uma opção..."),
         
-        selectInput("modelo", "Selecione o Modelo:", 
+        selectInput("modelo", "Selecione o Modelo:",
                     choices = c("Regressão Linear", "Regressão SAR", "GWR Multiscale")),
         
-        selectInput("estado_mapa_modelos", "Selecione o Estado:", 
-                    choices = c("Todos os estados", "AC", "AL", "AM", "AP", "BA", "CE", "DF", "ES", 
-                                "GO", "MA", "MG", "MS", "MT", "PA", "PB", "PE", "PI", "PR", "RJ", 
+        selectInput("estado_mapa_modelos", "Selecione o Estado:",
+                    choices = c("Todos os estados", "AC", "AL", "AM", "AP", "BA", "CE", "DF", "ES",
+                                "GO", "MA", "MG", "MS", "MT", "PA", "PB", "PE", "PI", "PR", "RJ",
                                 "RN", "RO", "RR", "RS", "SC", "SE", "SP", "TO"),
                     selected = "SP"),
         
@@ -194,6 +210,44 @@ ui <- page_navbar(
     )
   ),
   
+  #------------#------------#------------#------------------------------
+  #------------ PAINEL 5 - Análise de Documento PDF LADO INTERFACE -------
+  #------------#------------#------------#------------------------------
+  
+  nav_panel(
+    title = "Análise de Documento PDF",  # Título do Painel 5
+    layout_sidebar(
+      sidebar = sidebar(
+        width = 250,
+        fileInput("pdfFile", "Faça upload do arquivo PDF", accept = ".pdf")
+      ),
+      mainPanel(
+        width = 9,
+        # Resumo para Pessoas Idosas com botão de download
+        h3("Resumo para Pessoas Idosas"),
+        shinycssloaders::withSpinner(verbatimTextOutput("elderly_summary")),
+        
+        # Botão de Download
+        shinyjs::disabled(downloadButton("download_elderly_summary", "Download Resumo para Pessoas Idosas")),
+        br(), br(),
+        
+        # Botão para gerar nuvem de palavras e gráfico
+        shinyjs::disabled(actionButton("generate_plots", "Gerar Nuvem de Palavras e Gráfico", class = "btn-primary")),
+        br(), br(),
+        
+        # Nuvem de Palavras
+        h3("Nuvem de Palavras"),
+        shinycssloaders::withSpinner(wordcloud2::wordcloud2Output("wordcloud")),
+        br(), br(),
+        
+        # Gráfico de Recorrência por Palavras
+        h3("Gráfico de Recorrência por Palavras"),
+        shinycssloaders::withSpinner(plotOutput("word_freq_plot")),
+        br(), br()
+      )
+    )
+  ),
+  
   # Espaçador e menu de links
   nav_spacer(),
   
@@ -205,15 +259,17 @@ ui <- page_navbar(
   )
 )
 
-
-#------------#------------#------------#------------------------------ 
-#--------------------- INÍCIO DO LADO SERVIDOR ----------------------- 
-#------------#------------#------------#------------------------------ 
+#------------#------------#------------#------------------------------
+#--------------------- INÍCIO DO LADO SERVIDOR -----------------------
+#------------#------------#------------#------------------------------
 
 server <- function(input, output, session) {
   
-  #------------#------------#------------#------------------------------ 
-  #------------- CARREGANDO AS BASES DE DADOS -------------------------- 
+  # Inicializar shinyjs
+  shinyjs::useShinyjs()
+  
+  #------------#------------#------------#------------------------------
+  #------------- CARREGANDO AS BASES DE DADOS --------------------------
   #------------#------------#------------#------------------------------
   
   # Carregar as bases de dados
@@ -257,9 +313,8 @@ server <- function(input, output, session) {
   )
   
   #------------#------------#------------#------------------------------
-  #-------------- PAIEL 1 - Mapa Interativo LADO SERVIDOR -------------- 
+  #-------------- PAINEL 1 - Mapa Interativo LADO SERVIDOR --------------
   #------------#------------#------------#------------------------------
-  
   
   # Observador para atualizar as variáveis de acordo com a base selecionada
   observe({
@@ -284,7 +339,6 @@ server <- function(input, output, session) {
       setView(lng = -55, lat = -14, zoom = 4)  # Centraliza o mapa no Brasil
   })
   
-  # Observa mudanças nos inputs e atualiza o mapa com leafletProxy
   # Observa mudanças nos inputs e atualiza o mapa com leafletProxy
   observeEvent({
     input$data_type
@@ -365,9 +419,8 @@ server <- function(input, output, session) {
     }
   })
   
-  
   #------------#------------#------------#------------------------------
-  #-------------- PAIEL 2 - DATA EXPLORER LADO SERVIDOR ---------------- 
+  #-------------- PAINEL 2 - DATA EXPLORER LADO SERVIDOR ----------------
   #------------#------------#------------#------------------------------
   
   # Reactive para gerar a base de dados que será utilizada tanto para a Interface
@@ -383,9 +436,7 @@ server <- function(input, output, session) {
     }
   })
   
-  
   # Verificação ao selecionar o estado sem escolher a base
-  
   observeEvent(input$estado_mapa_DE, {
     if (input$data_type_DE == "Escolha uma opção...") {
       showNotification("Por favor, selecione uma base de dados antes de escolher o estado.", type = "warning")
@@ -394,8 +445,6 @@ server <- function(input, output, session) {
       updateSelectInput(session, "estado_mapa_DE", selected = character(0))
     }
   })
-  
-  
   
   # Observador para atualizar as variáveis de acordo com a base selecionada no segundo painel
   observe({
@@ -409,16 +458,14 @@ server <- function(input, output, session) {
   
   # Interface UI para o seletor de variáveis
   output$variavel_mapa_ui_DE <- renderUI({
-    selectInput("variavel_mapa_DE", "Selecione a Variável para ser apresentada na tabela ao lado:", 
+    selectInput("variavel_mapa_DE", "Selecione a Variável para ser apresentada na tabela ao lado:",
                 choices = NULL,
-                multiple=TRUE)
+                multiple = TRUE)
   })
   
   # Observer para apresentar apenas as cidades do estado previamente selecionado dentro do PAINEL 2
-  
   observe({
     req(input$data_type_DE != "Escolha uma opção...")  # Verifica se a base foi selecionada
-    
     
     Cidades_DE <- if (is.null(input$estado_mapa_DE)) character(0) else {
       filter(df_DE(), df_DE()$Sigla_UF %in% input$estado_mapa_DE) %>%
@@ -427,13 +474,12 @@ server <- function(input, output, session) {
         sort()
     }
     stillSelected <- isolate(input$cidades_DE[input$cidades_DE %in% Cidades_DE])
-    updateSelectizeInput(session, 
-                         "cidades_DE", 
+    updateSelectizeInput(session,
+                         "cidades_DE",
                          choices = Cidades_DE,
-                         selected = stillSelected, 
+                         selected = stillSelected,
                          server = TRUE)
   })
-  
   
   # Reactive para gerar a base de dados que será utilizada tanto para a tabela quanto para o gráfico
   df_Final <- reactive({
@@ -445,12 +491,11 @@ server <- function(input, output, session) {
         is.null(input$cidades_DE) | df_DE()$`Nome Município` %in% input$cidades_DE) %>%
       select("Código Município",
              "Nome Município",
-             "Nome UF", 
+             "Nome UF",
              input$variavel_mapa_DE) %>% # Adicionamos dinamicamente todas as variaveis selecionadas pelo usuário
-      rename_with(~ substr(.,0,20))     # Diminuindo o tamanho do nome da variável para melhorar o layout da tabela
+      rename_with(~ substr(., 0, 20))     # Diminuindo o tamanho do nome da variável para melhorar o layout da tabela
     
   })
-  
   
   # Renderizando a tabela final
   output$DataTable_DE <- DT::renderDataTable({
@@ -460,7 +505,6 @@ server <- function(input, output, session) {
     validate(
       need(!is.null(df_Final()), "Nenhuma tabela a ser exibida.")
     )
-    
     
     DT::datatable(df_Final(), escape = FALSE)
   }, options = list(scrollX = TRUE))
@@ -488,21 +532,18 @@ server <- function(input, output, session) {
     }
   })
   
-  
   # Renderizando o gráfico que será apresentado abaixo do Texto
   output$plot_DE <- plotly::renderPlotly({
     
     # validando se o usuário selecionou o mínimo necessário de variáveis para gerar o gráfico
     validate(
-      #need(input$data_point_1_DE[1], 'Check at least one letter!'),
-      need(input$variavel_mapa_DE[2] != '', 'Por favor selecione 2 variáveis para adicionar à tabela e gerar o gráfico')
+      need(length(input$variavel_mapa_DE) >= 2, 'Por favor selecione pelo menos 2 variáveis para gerar o gráfico')
     )
     
     p <- df_Final() %>%
-      #tibble::rownames_to_column()  %>%
       ggplot(aes(
-        x = .data[[substr(input$variavel_mapa_DE[1],0,20)]], # estou fazendo o substr() para que as colunas tenham extamente o mesmo nome da variável de Input
-        y = .data[[substr(input$variavel_mapa_DE[2],0,20)]],
+        x = .data[[substr(input$variavel_mapa_DE[1], 0, 20)]], # estou fazendo o substr() para que as colunas tenham exatamente o mesmo nome da variável de Input
+        y = .data[[substr(input$variavel_mapa_DE[2], 0, 20)]],
         text = .data[["Nome Município"]]
       )) +
       geom_point() +
@@ -511,11 +552,11 @@ server <- function(input, output, session) {
     plotly::ggplotly(p)
   })
   
-  #------------#------------#------------#------------------------------ 
-  #------------ PAIEL 3 - RAIO X MUNICIPAL  LADO SERVIDOR -------------- 
-  #------------#------------#------------#------------------------------ 
+  #------------#------------#------------#------------------------------
+  #------------ PAINEL 3 - RAIO X MUNICIPAL  LADO SERVIDOR --------------
+  #------------#------------#------------#------------------------------
   
-  # Reactive para gerar a base de dados que será utilizada por todo o Painel 3 
+  # Reactive para gerar a base de dados que será utilizada por todo o Painel 3
   df_RM <- reactive({
     # Retorne NULL se a escolha for o placeholder
     if (input$data_type_RM == "Escolha uma opção...") return(NULL)
@@ -550,9 +591,9 @@ server <- function(input, output, session) {
   
   # Interface UI para o seletor de variáveis
   output$variavel_mapa_ui_RM <- renderUI({
-    selectInput("variavel_mapa_RM", "Selecione a Variável para ser apresentada na tabela ao lado:", 
+    selectInput("variavel_mapa_RM", "Selecione as Variáveis para o Gráfico Radar:",
                 choices = NULL,
-                multiple=TRUE)
+                multiple = TRUE)
   })
   
   # Observador para apresentar apenas as cidades do estado previamente selecionado dentro do PAINEL 3
@@ -566,10 +607,10 @@ server <- function(input, output, session) {
         sort()
     }
     stillSelected <- isolate(input$cidades_RM[input$cidades_RM %in% Cidades_RM])
-    updateSelectizeInput(session, 
-                         "cidades_RM", 
+    updateSelectizeInput(session,
+                         "cidades_RM",
                          choices = Cidades_RM,
-                         selected = stillSelected, 
+                         selected = stillSelected,
                          server = TRUE)
   })
   
@@ -595,22 +636,22 @@ server <- function(input, output, session) {
         is.null(input$cidades_RM) | df_RM()$`Nome Município` %in% input$cidades_RM) %>%
       select("Nome_Completo", input$variavel_mapa_RM) %>%
       # Normalização min-max baseada nos valores globais da base de dados completa
-      mutate(across(-Nome_Completo, 
+      mutate(across(-Nome_Completo,
                     ~ (. - valores_min_max()$Mínimo[which(valores_min_max()$Variável == cur_column())]) /
-                      (valores_min_max()$Máximo[which(valores_min_max()$Variável == cur_column())] - 
+                      (valores_min_max()$Máximo[which(valores_min_max()$Variável == cur_column())] -
                          valores_min_max()$Mínimo[which(valores_min_max()$Variável == cur_column())]),
                     .names = "Valor_Escalonado_{col}")) %>%
-      tidyr::pivot_longer(cols = starts_with("Valor_Escalonado"), 
-                          names_to = "Variável", 
-                          names_prefix = "Valor_Escalonado_", 
+      tidyr::pivot_longer(cols = starts_with("Valor_Escalonado"),
+                          names_to = "Variável",
+                          names_prefix = "Valor_Escalonado_",
                           values_to = "Valor_Escalonado")
   })
   
   # Renderizando o gráfico scatterpolar
   output$scatterpolar_rm <- plotly::renderPlotly({
     validate(
-      need(input$cidades_RM[2] != '', 'Por favor selecione ao menos 2 cidades'),
-      need(input$variavel_mapa_RM[3] != '', 'Por favor selecione no mínimo 3 variáveis para adicionar à tabela e gerar o gráfico')
+      need(length(input$cidades_RM) >= 2, 'Por favor selecione ao menos 2 cidades'),
+      need(length(input$variavel_mapa_RM) >= 3, 'Por favor selecione no mínimo 3 variáveis para gerar o gráfico')
     )
     
     plot_ly(
@@ -627,7 +668,6 @@ server <- function(input, output, session) {
         name = ~Nome_Completo
       )
   })
-  
   
   # Reactive para gerar a base de dados e também a tabela informativa com os valores originais, mínimos, máximos e valores escalonados
   df_RM_Info <- reactive({
@@ -646,14 +686,14 @@ server <- function(input, output, session) {
     
     # Adicionando a coluna "Valor_Escalonado" ao dataframe df_selecionado usando os valores globais
     valores_escalonados <- df_selecionado %>%
-      mutate(across(-Nome_Completo, 
+      mutate(across(-Nome_Completo,
                     ~ (. - valores_min_max$Mínimo[which(valores_min_max$Variável == cur_column())]) /
-                      (valores_min_max$Máximo[which(valores_min_max$Variável == cur_column())] - 
+                      (valores_min_max$Máximo[which(valores_min_max$Variável == cur_column())] -
                          valores_min_max$Mínimo[which(valores_min_max$Variável == cur_column())]),
                     .names = "Valor_Escalonado_{col}")) %>%
-      tidyr::pivot_longer(cols = starts_with("Valor_Escalonado"), 
-                          names_to = "Variável", 
-                          names_prefix = "Valor_Escalonado_", 
+      tidyr::pivot_longer(cols = starts_with("Valor_Escalonado"),
+                          names_to = "Variável",
+                          names_prefix = "Valor_Escalonado_",
                           values_to = "Valor_Escalonado")
     
     # Transformando para o formato long e juntando com os valores mínimo e máximo
@@ -666,8 +706,6 @@ server <- function(input, output, session) {
     return(valores_long)
   })
   
-  
-  
   # Código para gerar a tabela resumo abaixo do gráfico de scatterplot
   output$informacao_tabela_RM <- DT::renderDataTable({
     req(df_RM_Info())  # Certifica-se de que a tabela existe
@@ -675,10 +713,9 @@ server <- function(input, output, session) {
     DT::datatable(df_RM_Info(), options = list(pageLength = 5, scrollX = TRUE))
   })
   
-  
-  #------------#------------#------------#------------------------------ 
-  #------------ PAINEL 4 - Modelos Regressão LADO SERVIDOR ------------- 
-  #------------#------------#------------#------------------------------ 
+  #------------#------------#------------#------------------------------
+  #------------ PAINEL 4 - Modelos Regressão LADO SERVIDOR -------------
+  #------------#------------#------------#------------------------------
   
   # Reactive para definir a coluna de resíduos com base na variável dependente e no modelo selecionado
   modelo_residuos_coluna <- reactive({
@@ -703,7 +740,6 @@ server <- function(input, output, session) {
     }
   })
   
-
   # Título dinâmico para o mapa
   output$titulo_mapa_residuos <- renderUI({
     if (input$var_dependente == "Escolha uma opção...") {
@@ -714,7 +750,6 @@ server <- function(input, output, session) {
     }
   })
   
-  
   # Título dinâmico para o sumário do modelo
   output$titulo_summary_modelos <- renderUI({
     if (input$var_dependente == "Escolha uma opção...") {
@@ -724,8 +759,6 @@ server <- function(input, output, session) {
       HTML(paste0("<h4>", titulo_sumario, "</h4>"))
     }
   })
-  
-  
   
   # Renderiza o mapa base apenas uma vez
   output$mapa_residuos <- renderLeaflet({
@@ -750,81 +783,61 @@ server <- function(input, output, session) {
           position = "topright"
         )
     } else {
-    req(modelo_residuos_coluna())
-    
-    # Filtra os dados conforme o estado selecionado
-    dados_mapa <- if (input$estado_mapa_modelos != "Todos os estados") {
-      sf_objeto_GWR %>% filter(Sigla_UF == input$estado_mapa_modelos)
-    } else {
-      sf_objeto_GWR
-    }
-    
-    # Certifica-se de que a projeção está em WGS84
-    dados_mapa <- st_transform(dados_mapa, crs = 4326)
-    
-    residuos <- dados_mapa[[modelo_residuos_coluna()]]
-    pal <- colorNumeric("RdYlBu", domain = residuos, na.color = "transparent", reverse = TRUE)
-    
-    leafletProxy("mapa_residuos", data = dados_mapa) %>%
-      clearShapes() %>%
-      clearControls() %>%
-      addPolygons(
-        fillColor = ~pal(residuos),
-        fillOpacity = 0.7,
-        color = "white",
-        weight = 1,
-        popup = ~paste(
-          "<strong>Município:</strong>", `Nome.Município`, "<br>",
-          "<strong>UF:</strong>", Sigla_UF, "<br>",
-          "<strong>Resíduo:</strong>", residuos
-        )
-      ) %>%
-      {if (input$exibir_legenda_modelos) addLegend(., pal = pal, values = residuos, 
-                                                   title = paste("Resíduos -", input$modelo), 
-                                                   position = "bottomright") else .}
-    
-    # Reposicionar o mapa para o estado selecionado
-    if (input$estado_mapa_modelos != "Todos os estados") {
-      # Verifica se existem dados após o filtro
-      if (nrow(dados_mapa) > 0) {
-        bbox <- st_bbox(dados_mapa)
-        
-        leafletProxy("mapa_residuos") %>%
-          fitBounds(lng1 = as.numeric(bbox["xmin"]), lat1 = as.numeric(bbox["ymin"]),
-                    lng2 = as.numeric(bbox["xmax"]), lat2 = as.numeric(bbox["ymax"]))
+      req(modelo_residuos_coluna())
+      
+      # Filtra os dados conforme o estado selecionado
+      dados_mapa <- if (input$estado_mapa_modelos != "Todos os estados") {
+        sf_objeto_GWR %>% filter(Sigla_UF == input$estado_mapa_modelos)
       } else {
-        # Se não houver dados, centraliza o mapa no Brasil
+        sf_objeto_GWR
+      }
+      
+      # Certifica-se de que a projeção está em WGS84
+      dados_mapa <- st_transform(dados_mapa, crs = 4326)
+      
+      residuos <- dados_mapa[[modelo_residuos_coluna()]]
+      pal <- colorNumeric("RdYlBu", domain = residuos, na.color = "transparent", reverse = TRUE)
+      
+      leafletProxy("mapa_residuos", data = dados_mapa) %>%
+        clearShapes() %>%
+        clearControls() %>%
+        addPolygons(
+          fillColor = ~pal(residuos),
+          fillOpacity = 0.7,
+          color = "white",
+          weight = 1,
+          popup = ~paste(
+            "<strong>Município:</strong>", `Nome.Município`, "<br>",
+            "<strong>UF:</strong>", Sigla_UF, "<br>",
+            "<strong>Resíduo:</strong>", residuos
+          )
+        ) %>%
+        {if (input$exibir_legenda_modelos) addLegend(., pal = pal, values = residuos,
+                                                     title = paste("Resíduos -", input$modelo),
+                                                     position = "bottomright") else .}
+      
+      # Reposicionar o mapa para o estado selecionado
+      if (input$estado_mapa_modelos != "Todos os estados") {
+        # Verifica se existem dados após o filtro
+        if (nrow(dados_mapa) > 0) {
+          bbox <- st_bbox(dados_mapa)
+          
+          leafletProxy("mapa_residuos") %>%
+            fitBounds(lng1 = as.numeric(bbox["xmin"]), lat1 = as.numeric(bbox["ymin"]),
+                      lng2 = as.numeric(bbox["xmax"]), lat2 = as.numeric(bbox["ymax"]))
+        } else {
+          # Se não houver dados, centraliza o mapa no Brasil
+          leafletProxy("mapa_residuos") %>%
+            setView(lng = -55, lat = -14, zoom = 4)
+        }
+      } else {
+        # Se "Todos os estados" for selecionado, ajustar o mapa para mostrar o Brasil inteiro
         leafletProxy("mapa_residuos") %>%
           setView(lng = -55, lat = -14, zoom = 4)
       }
-    } else {
-      # Se "Todos os estados" for selecionado, ajustar o mapa para mostrar o Brasil inteiro
-      leafletProxy("mapa_residuos") %>%
-        setView(lng = -55, lat = -14, zoom = 4)
     }
-  }
     
   })
-  
-  
-  # Função para sumarizar o modelo GWR Multiscale de forma consistente
-  summary_gwr <- function(modelo) {
-    # Extrai as estatísticas globais principais do modelo
-    global_r2 <- modelo$GW.diagnostics$R2  # Exemplo para o R² global (ajuste conforme necessário)
-    global_aic <- modelo$GW.diagnostics$AICc  # Exemplo para AIC (ajuste conforme necessário)
-    
-    # Mostra os coeficientes globais estimados
-    cat("Coeficientes globais estimados:\n")
-    print(modelo$SDF$summaryStats)  # Ajuste conforme a estrutura real do seu modelo
-    
-    # Exibe o R² global e o AIC
-    cat("\nR² Global:", global_r2, "\n")
-    cat("AICc Global:", global_aic, "\n")
-    
-    # Outras informações de diagnóstico
-    cat("\nEstatísticas de diagnóstico do modelo:\n")
-    print(modelo$GW.diagnostics)
-  }
   
   # Função para sumarizar o modelo GWR Multiscale de forma detalhada
   summary_gwr <- function(modelo) {
@@ -889,7 +902,6 @@ server <- function(input, output, session) {
     cat("FIM DO RESUMO\n")
   }
   
-  
   # Função para sumarizar o modelo SAR de forma simplificada
   summary_sarlm <- function(modelo) {
     cat("Resumo do Modelo SAR (Spatial Autoregressive Model)\n")
@@ -898,8 +910,6 @@ server <- function(input, output, session) {
     summary(modelo)
     
   }
-  
-  
   
   # Renderização do sumário do modelo com ajuste para o GWR Multiscale e SAR
   output$summary_output_modelos <- renderPrint({
@@ -921,9 +931,135 @@ server <- function(input, output, session) {
     }
   })
   
+  #------------#------------#------------#------------------------------
+  #------------ PAINEL 5 - Análise de Documento PDF LADO SERVIDOR -------
+  #------------#------------#------------#------------------------------
   
+  # Definir reactiveValues para armazenar os resultados
+  summaries <- reactiveValues(
+    elderly_summary = NULL,
+    wordcloud_data = NULL,
+    word_freq = NULL
+  )
   
+  # Reactive expression para ler o texto do PDF
+  pdfText <- reactive({
+    req(input$pdfFile)
+    texto <- pdftools::pdf_text(input$pdfFile$datapath)
+    # Excluir o arquivo após a leitura
+    file.remove(input$pdfFile$datapath)
+    paste(texto, collapse = " ")
+  })
   
+  # Observador para gerar o resumo para pessoas idosas imediatamente após o upload
+  observeEvent(pdfText(), {
+    texto <- pdfText()
+    summaries$elderly_summary <- generate_elderly_summary(texto)
+    
+    # Habilitar o botão de download após a geração do resumo
+    shinyjs::enable("download_elderly_summary")
+    
+    # Habilitar o botão para gerar nuvem de palavras e gráfico
+    shinyjs::enable("generate_plots")
+  })
+  
+  # Observador para gerar a nuvem de palavras e o gráfico quando o botão é clicado
+  observeEvent(input$generate_plots, {
+    texto <- pdfText()
+    summaries$wordcloud_data <- prepare_wordcloud(texto)
+    summaries$word_freq <- prepare_word_freq(texto)
+  })
+  
+  # Função para gerar resumo do ponto de vista de uma pessoa idosa em formato de bullet points
+  generate_elderly_summary <- function(text) {
+    response <- tryCatch({
+      openai::create_chat_completion(
+        model = "gpt-3.5-turbo",
+        messages = list(
+          list(
+            role = "system",
+            content = "Você é um assistente que resume textos em português do ponto de vista de uma pessoa idosa brasileira. Destaque as principais ações e medidas adotadas para a população idosa e como os idosos podem se beneficiar dessas ações."
+          ),
+          list(role = "user", content = paste("Resuma o seguinte texto em formato de lista com bullet points considerando o ponto de vista de uma pessoa idosa:\n\n", text))
+        ),
+        temperature = 0.5,
+        max_tokens = 300  # Ajustado para evitar truncamento
+      )
+    }, error = function(e) {
+      return(paste("Erro ao gerar o resumo para pessoas idosas:", e$message))
+    })
+    
+    if (is.list(response) && !is.null(response$choices) && length(response$choices) > 0) {
+      content <- response$choices$message.content[1]
+      if (!is.null(content)) {
+        content <- gsub("\n+", "\n", content)
+        content <- trimws(content)
+        return(content)
+      } else {
+        return("Formato de resposta inesperado na geração do resumo para pessoas idosas.")
+      }
+    } else {
+      return(response)  # Retorna a mensagem de erro
+    }
+  }
+  
+  # Função para preparar os dados para a nuvem de palavras
+  prepare_wordcloud <- function(text) {
+    tokens <- tibble(text = text) %>%
+      unnest_tokens(word, text) %>%
+      mutate(word = tolower(word)) %>%
+      filter(!word %in% stopwords::stopwords("pt")) %>%
+      count(word, sort = TRUE) %>%
+      filter(n > 1)
+    return(tokens)
+  }
+  
+  # Função para preparar os dados para o gráfico de recorrência
+  prepare_word_freq <- function(text) {
+    tokens <- tibble(text = text) %>%
+      unnest_tokens(word, text) %>%
+      mutate(word = tolower(word)) %>%
+      filter(!word %in% stopwords::stopwords("pt")) %>%
+      count(word, sort = TRUE) %>%
+      filter(n > 1) %>%
+      top_n(20, wt = n)
+    return(tokens)
+  }
+  
+  # Renderizar o resumo para pessoas idosas
+  output$elderly_summary <- renderText({
+    req(summaries$elderly_summary)
+    summaries$elderly_summary
+  })
+  
+  # Renderizar a nuvem de palavras
+  output$wordcloud <- wordcloud2::renderWordcloud2({
+    req(summaries$wordcloud_data)
+    wordcloud2::wordcloud2(summaries$wordcloud_data, size = 1, color = "random-light", backgroundColor = "white")
+  })
+  
+  # Renderizar o gráfico de recorrência por palavras
+  output$word_freq_plot <- renderPlot({
+    req(summaries$word_freq)
+    ggplot(summaries$word_freq, aes(x = reorder(word, n), y = n)) +
+      geom_bar(stat = "identity", fill = "steelblue") +
+      coord_flip() +
+      labs(title = "Recorrência das 20 Palavras Mais Frequentes",
+           x = "Palavras",
+           y = "Frequência") +
+      theme_minimal()
+  })
+  
+  # Download do Resumo para Pessoas Idosas
+  output$download_elderly_summary <- downloadHandler(
+    filename = function() {
+      paste("Resumo_Pessoas_Idosas_", Sys.Date(), ".txt", sep = "")
+    },
+    content = function(file) {
+      resumo_idosos <- summaries$elderly_summary
+      writeLines(resumo_idosos, con = file)
+    }
+  )
   
 }
 

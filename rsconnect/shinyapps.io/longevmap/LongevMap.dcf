@@ -5,7 +5,7 @@ account: longevmap
 server: shinyapps.io
 hostUrl: https://api.shinyapps.io/v1
 appId: 13083065
-bundleId:
+bundleId: 9303472
 url: https://longevmap.shinyapps.io/LongevMap/
 version: 1
 asMultiple: FALSE

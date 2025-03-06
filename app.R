@@ -171,7 +171,7 @@ ui <- page_navbar(
                     selected = "Escolha uma opção..."),
         
         selectInput("modelo", "Selecione o Modelo:",
-                    choices = c("Regressão Linear", "Regressão SAR", "GWR Multiscale")),
+                    choices = c("Regressão Linear", "Regressão SAR", "GWR Básico", "GWR Multiscale")),
         
         selectInput("estado_mapa_modelos", "Selecione o Estado:",
                     choices = c("Todos os estados", "AC", "AL", "AM", "AP", "BA", "CE", "DF", "ES",
@@ -274,15 +274,19 @@ server <- function(input, output, session) {
   model_linear_TIpc <- readRDS("models/model_linear_TIpc.rds")
   model_SAR_TIpc <- readRDS("models/model_SAR_TIpc.rds")
   model_GWR_TIpc <- readRDS("models/model_GWR_TIpc.rds")
+  model_GWR_Basic_TIpc <- readRDS("models/model_GWR_Basic_TIpc.rds")
+  
   
   model_linear_MII <- readRDS("models/model_linear_MII.rds")
   model_SAR_MII <- readRDS("models/model_SAR_MII.rds")
   model_GWR_MII <- readRDS("models/model_GWR_MII.rds")
+  model_GWR_Basic_MII <- readRDS("models/model_GWR_Basic_MII.rds")
   
   # Carregar os modelos da Expectativa de Vida ao Nascer (EdVN)
   model_linear_EdVN <- readRDS("models/model_linear_EDV.rds")
   model_SAR_EdVN <- readRDS("models/model_SAR_EDV.rds")
   model_GWR_EdVN <- readRDS("models/model_GWR_MEDV.rds")
+  model_GWR_Basic_EDVN<- readRDS("models/model_GWR_Basic_EDV.rds")
   
   # Carregar o objeto sf para o mapa do modelo GWR Multiscale
   sf_objeto_GWR <- readRDS("data/sf_objeto_Dados_Painel_4.rds")
@@ -292,16 +296,19 @@ server <- function(input, output, session) {
     "TIpc" = list(
       "Regressão Linear" = model_linear_TIpc,
       "Regressão SAR" = model_SAR_TIpc,
+      "GWR Básico" = model_GWR_Basic_TIpc,
       "GWR Multiscale" = model_GWR_TIpc
     ),
     "MII" = list(
       "Regressão Linear" = model_linear_MII,
       "Regressão SAR" = model_SAR_MII,
+      "GWR Básico" = model_GWR_Basic_MII,
       "GWR Multiscale" = model_GWR_MII
     ),
     "EdVN" = list(
       "Regressão Linear" = model_linear_EdVN,
       "Regressão SAR" = model_SAR_EdVN,
+      "GWR Básico" = model_GWR_Basic_EDVN,
       "GWR Multiscale" = model_GWR_EdVN
     )
   )
@@ -720,16 +727,19 @@ server <- function(input, output, session) {
       switch(input$modelo,
              "Regressão Linear" = "model_Linear_Res_TIpc",
              "Regressão SAR" = "model_SAR_Res_TIpc",
+             "GWR Básico" = "model_GWR.BASIC_Res_TIpc",
              "GWR Multiscale" = "model_GWR.MULT_Res_TIpc")
     } else if (input$var_dependente == "Mediana de Idade dos Idosos (MII)") {
       switch(input$modelo,
              "Regressão Linear" = "model_Linear_Res_MII",
              "Regressão SAR" = "model_SAR_Res_MII",
+             "GWR Básico" = "model_GWR.BASIC_Res_MII",
              "GWR Multiscale" = "model_GWR.MULT_Res_MII")
     } else if (input$var_dependente == "Expectativa de Vida ao Nascer (EdVN)") {
       switch(input$modelo,
              "Regressão Linear" = "model_linear_EdVN",
              "Regressão SAR" = "model_SAR_EdVN",
+             "GWR Básico" = "model_GWR.Basic_EdVN",
              "GWR Multiscale" = "model_GWR_EdVN")
     }
   })
@@ -835,7 +845,7 @@ server <- function(input, output, session) {
   
   # Função para sumarizar o modelo GWR Multiscale de forma detalhada
   summary_gwr <- function(modelo) {
-    cat("Resumo do Modelo GWR Multiscale\n")
+    cat("Resumo do Modelo GWR Multiscale \n")
     cat("----------------------------------\n")
     
     print(modelo$this.call)
@@ -896,6 +906,70 @@ server <- function(input, output, session) {
     cat("FIM DO RESUMO\n")
   }
   
+  # Função para sumarizar o modelo GWR Multiscale de forma detalhada
+  summary_gwr_basic <- function(modelo) {
+    cat("Resumo do Modelo GWR Basic \n")
+    cat("----------------------------------\n")
+    
+    print(modelo$this.call)
+    cat("----------------------------------\n")
+    
+    # R² Global e AICc Global, conforme disponíveis
+    if (!is.null(modelo$GW.diagnostic$gw.R2)) {
+      cat("R² Global:", modelo$GW.diagnostic$gw.R2, "\n")
+      cat("R² Global Ajustado:", modelo$GW.diagnostic$gwR2.adj, "\n")
+    }
+    if (!is.null(modelo$GW.diagnostic$AICc)) {
+      cat("AICc Global:", modelo$GW.diagnostic$AICc, "\n")
+    }
+    
+    # Estatísticas locais (por exemplo, estatísticas resumidas)
+    cat("\nLargura de banda calculada:\n")
+    if (!is.null(modelo$GW.arguments$bw)) {
+      print(modelo$GW.arguments$bw)
+    } else {
+      cat("Estatísticas locais não disponíveis\n")
+    }
+    
+    # Resumo dos coeficientes globais e das estatísticas adicionais
+    cat("\nCoeficientes Estimados por Variável com Erros Padrão e Valores-T:\n")
+    if (!is.null(modelo$SDF)) {
+      # Extrai os nomes dos coeficientes, erros padrão e valores-t
+      coeficientes <- names(modelo$SDF)[!grepl("_SE|_TV", names(modelo$SDF))]
+      
+      for (coef in coeficientes) {
+        cat("\nResumo para:", coef, "\n")
+        
+        # Mostra o summary do coeficiente principal
+        cat("Coeficiente:\n")
+        print(summary(modelo$SDF[[coef]]))
+        
+        # Checa se o erro padrão e valor-t estão presentes e imprime
+        coef_se <- paste0(coef, "_SE")
+        if (coef_se %in% names(modelo$SDF)) {
+          cat("Erro Padrão:\n")
+          print(summary(modelo$SDF[[coef_se]]))
+        } else {
+          cat("Erro Padrão não disponível\n")
+        }
+        
+        coef_tv <- paste0(coef, "_TV")
+        if (coef_tv %in% names(modelo$SDF)) {
+          cat("Valor-T:\n")
+          print(summary(modelo$SDF[[coef_tv]]))
+        } else {
+          cat("Valor-T não disponível\n")
+        }
+      }
+    } else {
+      cat("Coeficientes não disponíveis\n")
+    }
+    
+    cat("----------------------------------\n")
+    cat("FIM DO RESUMO\n")
+  }
+  
+  
   # Renderização do sumário do modelo com ajuste para o GWR Multiscale e SAR
   output$summary_output_modelos <- renderPrint({
     req(input$var_dependente != "Escolha uma opção...", input$modelo)
@@ -909,7 +983,11 @@ server <- function(input, output, session) {
     
     if (input$modelo == "GWR Multiscale") {
       summary_gwr(modelo_selecionado)
-    } else {
+    }
+    if (input$modelo == "GWR Básico") {
+      summary_gwr_basic(modelo_selecionado)
+    }
+    else {
       print(summary(modelo_selecionado))
     }
   })

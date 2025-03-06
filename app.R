@@ -25,7 +25,18 @@ options(shiny.maxRequestSize = 10 * 1024^2)  # 10 MB
 openai_api_key <- Sys.getenv("OPENAI_API_KEY")
 
 # Definindo a Interface do Usuário (UI)
-ui <- page_navbar(
+ui <- tagList(
+  # 1) Primeiro, injetamos o CSS no head
+  tags$head(
+    tags$style(HTML("
+      /* Permitir que o texto dentro do selectInput quebre linha quando for muito longo */
+      .selectize-input, .selectize-dropdown {
+        white-space: normal !important;
+      }
+    "))
+  ), 
+  
+  page_navbar(
   title = "LongevMap",
   bg = "#2D89C8",
   inverse = TRUE,
@@ -155,11 +166,11 @@ ui <- page_navbar(
   ),
   
   #------------#------------#------------#------------------------------
-  #------------ PAINEL 4 - Modelos Regressão LADO INTERFACE -------------
+  #------------ PAINEL 4 - Resíduos Modelos Regressão LADO INTERFACE -------------
   #------------#------------#------------#------------------------------
   
   nav_panel(
-    title = "Modelos",
+    title = "Resíduos",
     layout_sidebar(
       sidebar = sidebar(
         width = 250,
@@ -207,12 +218,57 @@ ui <- page_navbar(
     )
   ),
   
+  #------------#------------#------------#------------------------------------
+  #------------ NOVO PAINEL 5 - Modelos Locais  LADO INTERFACE ---------------
+  #------------#------------#------------#------------------------------------
+  
+  nav_panel(
+    title = "Modelos Locais",
+    layout_sidebar(
+      sidebar = sidebar(
+        width = 250,
+        
+        selectInput("var_dependente_locais", "Selecione a Variável Dependente:",
+                    choices = c("Escolha uma opção...",
+                                "Total de Idosos per capita (TIpc)",
+                                "Mediana de Idade dos Idosos (MII)",
+                                "Expectativa de Vida ao Nascer (EdVN)"),
+                    selected = "Escolha uma opção..."),
+        
+        selectInput("tipo_modelo_locais", "Selecione o tipo de Modelo Local:",
+                    choices = c("GWR Multiscale", "GWR Básico")),
+        
+        # Coeficiente - será gerado dinamicamente baseado na escolha do usuário
+        uiOutput("coeficiente_locais_ui"),
+        
+        selectInput("estado_locais", "Selecione o Estado:",
+                    choices = c("Todos os estados", "AC", "AL", "AM", "AP", "BA", "CE", "DF", "ES",
+                                "GO", "MA", "MG", "MS", "MT", "PA", "PB", "PE", "PI", "PR", "RJ",
+                                "RN", "RO", "RR", "RS", "SC", "SE", "SP", "TO"),
+                    selected = "SP"),
+        
+        checkboxInput("exibir_legenda_locais", "Exibir Legenda", value = TRUE)
+      ),
+      mainPanel(
+        width = 9,
+        
+        # Card para o título e o mapa de coeficientes
+        bslib::card(
+          full_screen = TRUE,
+          uiOutput("titulo_mapa_locais"),
+          leafletOutput("mapa_locais", height = "80vh")
+        )
+      )
+    )
+  ),
+  
+  
   #------------#------------#------------#------------------------------
-  #------------ PAINEL 5 - Análise de Documento PDF LADO INTERFACE -------
+  #------------ PAINEL 6 - Análise de Documento PDF LADO INTERFACE -------
   #------------#------------#------------#------------------------------
   
   nav_panel(
-    title = "Análise de Documentos dos CMIs",  # Título do Painel 5
+    title = "Análise de Documentos dos CMIs",
     fluidPage(
       useShinyjs(),  # Inicializar shinyjs no UI
       # File input na tela principal
@@ -251,6 +307,7 @@ ui <- page_navbar(
     nav_item(tags$a("Posit", href = "https://posit.co")),
     nav_item(tags$a("Shiny", href = "https://shiny.posit.co"))
   )
+ )
 )
 
 #------------#------------#------------#------------------------------
@@ -312,6 +369,23 @@ server <- function(input, output, session) {
       "GWR Multiscale" = model_GWR_EdVN
     )
   )
+  
+  # Lista das bases para visualizar os coeficientes locais:
+  sf_locais <- list(
+    "TIpc" = list(
+      "GWR Multiscale" = readRDS("data/sf_Base_Final_Coeficientes_GWR_Multi_TIpc.rds"),
+      "GWR Básico"     = readRDS("data/sf_Base_Final_Coeficientes_GWR_Basic_TIpc.rds")
+    ),
+    "MII" = list(
+      "GWR Multiscale" = readRDS("data/sf_Base_Final_Coeficientes_GWR_Multi_MII.rds"),
+      "GWR Básico"     = readRDS("data/sf_Base_Final_Coeficientes_GWR_Basic_MII.rds")
+    ),
+    "EdVN" = list(
+      "GWR Multiscale" = readRDS("data/sf_Base_Final_Coeficientes_GWR_Multi_EdVN.rds"),
+      "GWR Básico"     = readRDS("data/sf_Base_Final_Coeficientes_GWR_Basic_EdVN.rds")
+    )
+  )
+  
   
   #------------#------------#------------#------------------------------
   #-------------- PAINEL 1 - Mapa Interativo LADO SERVIDOR --------------
@@ -420,9 +494,9 @@ server <- function(input, output, session) {
     }
   })
   
-  #------------#------------#------------#------------------------------
-  #-------------- PAINEL 2 - DATA EXPLORER LADO SERVIDOR ----------------
-  #------------#------------#------------#------------------------------
+  #------------#------------#------------#--------------------------------
+  #-------------- PAINEL 2 - DATA EXPLORER LADO SERVIDOR -----------------
+  #------------#------------#------------#--------------------------------
   
   # Reactive para gerar a base de dados que será utilizada tanto para a Interface
   df_DE <- reactive({
@@ -991,10 +1065,206 @@ server <- function(input, output, session) {
       print(summary(modelo_selecionado))
     }
   })
+
+  #------------#------------#------------#-------------------------------
+  #------------ PAINEL 5 - Modelos Locais  LADO INTERFACE ---------------
+  #------------#------------#------------#-------------------------------
   
-  #------------#------------#------------#------------------------------
-  #------------ PAINEL 5 - Análise de Documento PDF LADO SERVIDOR -------
-  #------------#------------#------------#------------------------------
+  # "Mapeia" o nome que aparece na UI para a "chave" que criamos na lista
+  varDepKey_locais <- reactive({
+    req(input$var_dependente_locais)
+    switch(input$var_dependente_locais,
+           "Total de Idosos per capita (TIpc)" = "TIpc",
+           "Mediana de Idade dos Idosos (MII)" = "MII",
+           "Expectativa de Vida ao Nascer (EdVN)" = "EdVN",
+           "Escolha uma opção..." = NULL)
+  })
+  
+  # Retorna o sf correto
+  sf_escolhido_locais <- reactive({
+    req(varDepKey_locais(), input$tipo_modelo_locais)
+    
+    # A lista final
+    sf_locais[[ varDepKey_locais() ]][[ input$tipo_modelo_locais ]]
+  })
+  
+  output$coeficiente_locais_ui <- renderUI({
+    req(sf_escolhido_locais())
+    
+    # 1) Remove a geometria para evitar a coluna geometry seja selecionada
+    dados_sem_geom <- sf::st_drop_geometry(sf_escolhido_locais())
+    
+    # 2) Pega apenas as colunas numéricas e remove colunas irrelevantes para o estudo
+    colunas <- names(dados_sem_geom)
+    colunas_num <- colunas[sapply(dados_sem_geom[, colunas], is.numeric)]
+    colunas_num <- setdiff(colunas_num, c("Código.UF", "Código.Região"))
+    
+    # Remove yhat, residual e colunas terminando em "_SE" ou "_TV"
+    colunas_filtradas <- colunas_num[!grepl("^(yhat|residual)$|_SE$|_TV$", colunas_num)]
+    
+    # Se não sobrou nada, usar uma frase direto dentro do mapa
+    if (length(colunas_filtradas) == 0) {
+      colunas_filtradas <- "Nenhum coeficiente encontrado"
+    }
+    
+    # 3) Criamos a versão amigável (sem pontos) para exibir o nome dos coeficientes
+    colunas_friendly <- gsub("\\.", " ", colunas_filtradas)
+    
+    # 4) Construímos o vetor nomeado de choices, de forma que:
+    #    - O "valor" (o que o Shiny salva em input$coeficiente_locais) é o nome real (com ponto).
+    #    - O "nome" (o que aparece na UI) é a versão amigável (sem ponto).
+    choices_nomeado <- setNames(colunas_filtradas, colunas_friendly)
+    
+    selectInput(
+      inputId = "coeficiente_locais",
+      label   = "Selecione o Coeficiente a ser mapeado:",
+      choices = choices_nomeado,
+      selected = colunas_filtradas[1],  # O valor real (com ponto)
+      width = "100%"                    # Ajusta a caixa à largura do painel
+    )
+  })
+  
+  
+  # Renderizar o mapa base (vazio) do painel "Modelos Locais" apenas uma vez
+  output$mapa_locais <- renderLeaflet({
+    leaflet() %>%
+      addProviderTiles("CartoDB.Positron") %>%
+      setView(lng = -55, lat = -14, zoom = 4)  # Centro do Brasil
+  })
+  
+  # Observador para atualizar o mapa quando as entradas mudarem
+  observeEvent({
+    input$var_dependente_locais
+    input$tipo_modelo_locais
+    input$coeficiente_locais
+    input$estado_locais
+    input$exibir_legenda_locais
+  }, {
+    # Se a variável dependente não estiver selecionada
+    if (input$var_dependente_locais == "Escolha uma opção...") {
+      leafletProxy("mapa_locais") %>%
+        clearShapes() %>%
+        clearControls() %>%
+        addControl(
+          html = "<div style='font-size: 16px; text-align: center;'>
+                  <strong>Por favor, selecione uma variável dependente e o modelo local.</strong>
+                </div>",
+          position = "topright"
+        )
+      return(NULL)
+    }
+    
+    req(sf_escolhido_locais(), input$coeficiente_locais)
+    
+    # Pega o sf correspondente ao modelo e variável (função reativa)
+    sf_dados <- sf_escolhido_locais()
+    
+    # Filtro pelo estado, caso não seja "Todos os estados"
+    if (input$estado_locais != "Todos os estados") {
+      sf_dados <- dplyr::filter(sf_dados, Sigla_UF == input$estado_locais)
+    }
+    
+    # Se não sobrou linhas após o filtro, exibir mensagem
+    if (nrow(sf_dados) == 0) {
+      leafletProxy("mapa_locais") %>%
+        clearShapes() %>%
+        clearControls() %>%
+        addControl(
+          html = "<div style='font-size: 16px; text-align: center; color:red;'>
+                  <strong>Nenhum dado encontrado após o filtro.</strong>
+                </div>",
+          position = "topright"
+        )
+      return(NULL)
+    }
+    
+    # Certificar projeção WGS84
+    sf_dados <- sf::st_transform(sf_dados, crs = 4326)
+    
+    # Vetor de coeficientes
+    valores_coef <- sf_dados[[ input$coeficiente_locais ]]
+    
+    if (length(valores_coef) == 0 || all(is.na(valores_coef))) {
+      leafletProxy("mapa_locais") %>%
+        clearShapes() %>%
+        clearControls() %>%
+        addControl(
+          html = "<div style='font-size: 16px; text-align: center; color:red;'>
+                  <strong>Não há dados disponíveis para esse coeficiente.</strong>
+                </div>",
+          position = "topright"
+        )
+      return(NULL)
+    }
+    
+    # Criando a paleta de cores
+    pal <- colorNumeric(
+      palette = "RdYlBu",
+      domain = valores_coef,
+      na.color = "transparent",
+      reverse = TRUE
+    )
+    
+    # Desenha os polígonos
+    leafletProxy("mapa_locais", data = sf_dados) %>%
+      clearShapes() %>%
+      clearControls() %>%
+      addPolygons(
+        fillColor   = ~ pal(valores_coef),
+        fillOpacity = 0.7,
+        color       = "white",
+        weight      = 1,
+        popup = ~paste(
+          "<strong>Município:</strong>", `Nome.Município`, "<br>",
+          "<strong>Estado:</strong>", Sigla_UF, "<br>",
+          "<strong>", input$coeficiente_locais, ":</strong>", round(valores_coef, 4)
+        )
+      ) %>%
+      {
+        if (input$exibir_legenda_locais) {
+          addLegend(.,
+                    pal    = pal,
+                    values = valores_coef,
+                    title  = paste("Coeficiente:", input$coeficiente_locais),
+                    position = "bottomright")
+        } else {
+          .
+        }
+      }
+    
+    # Agora, ajustamos o zoom (fitBounds) para o bounding box do que foi desenhado
+    bbox <- sf::st_bbox(sf_dados)  # bounding box do estado (ou de todo o Brasil se "Todos os estados")
+    
+    # (Opcional) imprimir no console para debug
+    print(bbox)
+    
+    leafletProxy("mapa_locais") %>%
+      fitBounds(
+        lng1 = as.numeric(bbox["xmin"]), lat1 = as.numeric(bbox["ymin"]),
+        lng2 = as.numeric(bbox["xmax"]), lat2 = as.numeric(bbox["ymax"])
+      )
+  })
+  
+  
+  
+  
+  output$titulo_mapa_locais <- renderUI({
+    if (input$var_dependente_locais == "Escolha uma opção...") {
+      return(NULL)  # Não exibe título
+    }
+    # Montamos um texto dinâmico
+    titulo <- paste(
+      "Mapa de Coeficientes Locais –", 
+      input$tipo_modelo_locais, "–", 
+      input$var_dependente_locais,
+      "<br>Coeficiente Selecionado:", input$coeficiente_locais
+    )
+    HTML(paste0("<h4>", titulo, "</h4>"))
+  })
+    
+  #------------#------------#------------#-------------------------------
+  #------------ PAINEL 6 - Análise de Documento PDF LADO SERVIDOR -------
+  #------------#------------#------------#-------------------------------
   
   # Definir reactiveValues para armazenar os resultados
   summaries <- reactiveValues(

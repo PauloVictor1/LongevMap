@@ -227,32 +227,31 @@ ui <- tagList(
     layout_sidebar(
       sidebar = sidebar(
         width = 250,
-        
         selectInput("var_dependente_locais", "Selecione a Variável Dependente:",
                     choices = c("Escolha uma opção...",
                                 "Total de Idosos per capita (TIpc)",
                                 "Mediana de Idade dos Idosos (MII)",
                                 "Expectativa de Vida ao Nascer (EdVN)"),
                     selected = "Escolha uma opção..."),
-        
         selectInput("tipo_modelo_locais", "Selecione o tipo de Modelo Local:",
                     choices = c("GWR Multiscale", "GWR Básico")),
-        
-        # Coeficiente - será gerado dinamicamente baseado na escolha do usuário
         uiOutput("coeficiente_locais_ui"),
-        
         selectInput("estado_locais", "Selecione o Estado:",
                     choices = c("Todos os estados", "AC", "AL", "AM", "AP", "BA", "CE", "DF", "ES",
                                 "GO", "MA", "MG", "MS", "MT", "PA", "PB", "PE", "PI", "PR", "RJ",
                                 "RN", "RO", "RR", "RS", "SC", "SE", "SP", "TO"),
                     selected = "SP"),
-        
-        checkboxInput("exibir_legenda_locais", "Exibir Legenda", value = TRUE)
+        checkboxInput("exibir_legenda_locais", "Exibir Legenda", value = TRUE),
+        # NOVOS CHECKBOXES:
+        checkboxInput("exibir_significancia_locais", 
+                      "Destacar municípios COM significância estatística (|t| > 1.96) nos coeficientes", 
+                      value = FALSE),
+        checkboxInput("exibir_nsignificancia_locais", 
+                      "Destacar municípios SEM significância estatística (|t| ≤ 1.96) nos coeficientes", 
+                      value = FALSE)
       ),
       mainPanel(
         width = 9,
-        
-        # Card para o título e o mapa de coeficientes
         bslib::card(
           full_screen = TRUE,
           uiOutput("titulo_mapa_locais"),
@@ -385,6 +384,18 @@ server <- function(input, output, session) {
       "GWR Básico"     = readRDS("data/sf_Base_Final_Coeficientes_GWR_Basic_EdVN.rds")
     )
   )
+  
+  observeEvent(input$exibir_significancia_locais, {
+    if (isTRUE(input$exibir_significancia_locais)) {
+      updateCheckboxInput(session, "exibir_nsignificancia_locais", value = FALSE)
+    }
+  })
+  
+  observeEvent(input$exibir_nsignificancia_locais, {
+    if (isTRUE(input$exibir_nsignificancia_locais)) {
+      updateCheckboxInput(session, "exibir_significancia_locais", value = FALSE)
+    }
+  })
   
   
   #------------#------------#------------#------------------------------
@@ -1067,7 +1078,7 @@ server <- function(input, output, session) {
   })
 
   #------------#------------#------------#-------------------------------
-  #------------ PAINEL 5 - Modelos Locais  LADO INTERFACE ---------------
+  #------------ PAINEL 5 - Modelos Locais  LADO Servidor- ---------------
   #------------#------------#------------#-------------------------------
   
   # "Mapeia" o nome que aparece na UI para a "chave" que criamos na lista
@@ -1139,6 +1150,8 @@ server <- function(input, output, session) {
     input$coeficiente_locais
     input$estado_locais
     input$exibir_legenda_locais
+    input$exibir_significancia_locais
+    input$exibir_nsignificancia_locais
   }, {
     # Se a variável dependente não estiver selecionada
     if (input$var_dependente_locais == "Escolha uma opção...") {
@@ -1235,14 +1248,59 @@ server <- function(input, output, session) {
     # Agora, ajustamos o zoom (fitBounds) para o bounding box do que foi desenhado
     bbox <- sf::st_bbox(sf_dados)  # bounding box do estado (ou de todo o Brasil se "Todos os estados")
     
-    # (Opcional) imprimir no console para debug
-    print(bbox)
-    
     leafletProxy("mapa_locais") %>%
       fitBounds(
         lng1 = as.numeric(bbox["xmin"]), lat1 = as.numeric(bbox["ymin"]),
         lng2 = as.numeric(bbox["xmax"]), lat2 = as.numeric(bbox["ymax"])
       )
+    # ========= NOVO BLOCO PARA A CAMADA EXTRA ============
+    # Obtenha o nome da coluna t-value:
+    t_value_col <- paste0(input$coeficiente_locais, "_TV")
+    
+    if (t_value_col %in% names(sf_dados)) {
+      # Se o checkbox para significância estiver marcado:
+      if (isTRUE(input$exibir_significancia_locais)) {
+        # Filtra municípios com |t-value| > 1.96
+        sf_extra <- sf_dados[ abs(sf_dados[[t_value_col]]) > 1.96, ]
+        if (nrow(sf_extra) > 0) {
+          leafletProxy("mapa_locais", data = sf_extra) %>%
+            addPolygons(
+              fill = FALSE,
+              color = "black",
+              weight = 2,
+              opacity = 1,
+              popup = ~paste(
+                "<strong>Município:</strong>", `Nome.Município`, "<br>",
+                "<strong>Estado:</strong>", Sigla_UF, "<br>",
+                "<strong>T-Value:</strong>", round(sf_extra[[t_value_col]], 2)
+              )
+            )
+        } else {
+          showNotification("Nenhum município com |t-value| > 1.96.", type = "message")
+        }
+      } else if (isTRUE(input$exibir_nsignificancia_locais)) {
+        # Filtra municípios com |t-value| ≤ 1.96
+        sf_extra <- sf_dados[ abs(sf_dados[[t_value_col]]) <= 1.96, ]
+        if (nrow(sf_extra) > 0) {
+          leafletProxy("mapa_locais", data = sf_extra) %>%
+            addPolygons(
+              fill = FALSE,
+              color = "black",
+              weight = 2,
+              opacity = 1,
+              popup = ~paste(
+                "<strong>Município:</strong>", `Nome.Município`, "<br>",
+                "<strong>Estado:</strong>", Sigla_UF, "<br>",
+                "<strong>T-Value:</strong>", round(sf_extra[[t_value_col]], 2)
+              )
+            )
+        } else {
+          showNotification("Nenhum município com |t-value| ≤ 1.96.", type = "message")
+        }
+      }
+    } else {
+      showNotification("Não foi encontrada a coluna de T-Value para esse coeficiente.", type = "warning")
+    }
   })
   
   

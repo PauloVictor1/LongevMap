@@ -24,6 +24,16 @@ options(shiny.maxRequestSize = 10 * 1024^2)  # 10 MB
 # Acessar a chave de API da OpenAI
 openai_api_key <- Sys.getenv("OPENAI_API_KEY")
 
+nome_mapeamento <- c(
+  "Valor.per.capita.adicionado.bruto.da.Agropecuária..a.preços.correntes..R..1.000." =
+    "Valor per capita adicionado bruto da Agropecuária, a preços correntes (R$ 1.000)",
+  "Impostos..líquidos.de.subsídios..per.capita.sobre.produtos..a.preços.correntes..R..1.000." =
+  "Impostos, líquidos de subsídios, per capita sobre produtos, a preços correntes (R$ 1.000)",
+  "Total.de.domicílios.particulares.permantes.ocupados.que.possui.ligação.à.rede.geral.de.distribuição.de.água..mas.utiliza.principalmente.outra.forma.per.capita"=
+  "Total de domicílios particulares permantes ocupados que possui ligação à rede geral de distribuição de água, mas utiliza principalmente outra forma per capita",
+  "Valor.per.capita.adicionado.bruto.da.Administração..defesa..educação.e.saúde.públicas.e.seguridade.social..a.preços.correntes..R..1.000." =
+  "Valor per capita adicionado bruto da Administração, defesa, educação e saúde públicas e seguridade social, a preços correntes (R$ 1.000)")
+
 # Definindo a Interface do Usuário (UI)
 ui <- tagList(
   # 1) Primeiro, injetamos o CSS no head
@@ -1356,13 +1366,13 @@ server <- function(input, output, session) {
   coeficientes_municipio <- reactive({
     req(sf_escolhido_locais(), input$municipio_locais)
     df <- sf::st_drop_geometry(sf_escolhido_locais())
-    # Remove as colunas "Código.UF" e "Código.Região"
-    df <- df %>% select(-one_of("Código.UF", "Código.Região"))
+    # Remove as colunas que não usaremos
+    df <- df %>% select(-one_of("Código.UF", "Código.Região", "Local_R2"))
     
     # Filtra pelo município selecionado (usando "Código.Município")
     df_mun <- df %>% filter(`Código.Município` == input$municipio_locais)
     
-    # Seleciona as colunas numéricas que não terminam com _TV ou _SE
+    # Seleciona as colunas numéricas (coeficientes) que não terminam com _SE ou _TV
     coef_cols <- names(df_mun)[sapply(df_mun, is.numeric)]
     coef_cols <- coef_cols[ !grepl("^(yhat|residual)$|_SE$|_TV$", coef_cols) ]
     
@@ -1386,7 +1396,7 @@ server <- function(input, output, session) {
     df_long$T_Value <- t_values
     df_long$Significativo <- ifelse(!is.na(t_values) & abs(t_values) > 1.96, "Sim", "Não")
     
-    # Obter o modelo selecionado para extrair a largura de banda
+    # Extração da largura de banda conforme o modelo selecionado
     var_dep <- switch(input$var_dependente_locais,
                       "Total de Idosos per capita (TIpc)" = "TIpc",
                       "Mediana de Idade dos Idosos (MII)" = "MII",
@@ -1398,21 +1408,43 @@ server <- function(input, output, session) {
       df_long$Largura_de_Banda <- bw
     } else if (input$tipo_modelo_locais == "GWR Multiscale") {
       bws <- modelo$GW.arguments$bws
-      print(modelo$GW.arguments$bws)
+      #print(bws)  # Para depuração
       # Se o número de elementos não coincidir com o número de coeficientes, um aviso será gerado.
       if(length(bws) != nrow(df_long)) {
         warning("O número de larguras de banda não coincide com o número de coeficientes.")
       }
       df_long$Largura_de_Banda <- bws
     }
-
+    
+    # Agora, adicionamos os valores reais do município
+    # Na base "dados_per_capita" o código do município é "Código Município"
+    df_valores <- st_drop_geometry(dados_per_capita) %>%
+      mutate(`Código.Município` = `Código Município`) %>%
+      filter(`Código.Município` == input$municipio_locais)
+    
+    # Para cada coeficiente, convertemos o nome (com pontos) para o nome usado na base de valores (com espaços)
+    # Em algum ponto do seu código, ao montar a tabela de detalhes:
+    df_long$Valor_Variável <- sapply(df_long$Coeficiente, function(col) {
+      # Se houver um mapeamento específico, use-o; senão, faça uma conversão padrão (por exemplo, substituindo pontos por espaços)
+      percapita_col <- if(col %in% names(nome_mapeamento)) {
+        nome_mapeamento[[col]]
+      } else {
+        gsub("\\.", " ", col)
+      }
+      if(percapita_col %in% names(df_valores)) {
+        return(as.numeric(df_valores[[percapita_col]]))
+      } else {
+        return(NA)
+      }
+    })
+    
     df_long
   })
   
   
   output$detalhes_municipio <- DT::renderDataTable({
     req(coeficientes_municipio())
-    DT::datatable(coeficientes_municipio(), options = list(pageLength = 25, scrollX = TRUE))
+    DT::datatable(coeficientes_municipio(), options = list(pageLength = 27, scrollX = TRUE))
   })
   
   

@@ -1424,19 +1424,33 @@ server <- function(input, output, session) {
     
     # Para cada coeficiente, convertemos o nome (com pontos) para o nome usado na base de valores (com espaços)
     # Em algum ponto do seu código, ao montar a tabela de detalhes:
+    # Dentro da função reativa que gera 'coeficientes_municipio', logo após definir df_long:
+    
+    # Obter os valores reais (da base de valores) para cada variável, tratando o intercept
     df_long$Valor_Variável <- sapply(df_long$Coeficiente, function(col) {
-      # Se houver um mapeamento específico, use-o; senão, faça uma conversão padrão (por exemplo, substituindo pontos por espaços)
-      percapita_col <- if(col %in% names(nome_mapeamento)) {
+      # Se for intercept, retornamos 1 (ou outro valor que você deseje)
+      if (tolower(col) == "intercept") {
+        return(NA)
+      }
+      # Mapear o nome do coeficiente para o nome usado na base de valores
+      percapita_col <- if (col %in% names(nome_mapeamento)) {
         nome_mapeamento[[col]]
       } else {
+        # Substituir os pontos por espaços
         gsub("\\.", " ", col)
       }
-      if(percapita_col %in% names(df_valores)) {
+      # Se a coluna mapeada existe na base de valores, retornar seu valor; caso contrário, NA
+      if (percapita_col %in% names(df_valores)) {
         return(as.numeric(df_valores[[percapita_col]]))
       } else {
         return(NA)
       }
     })
+    
+    # Agora, calculamos o produto entre o coeficiente e o valor real da variável
+    #df_long$`Produto Coeficiente x Variável` <- df_long$`Valor Coeficiente` * df_long$Valor_Variável
+    
+    
     
     df_long
   })

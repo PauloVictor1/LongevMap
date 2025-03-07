@@ -241,6 +241,8 @@ ui <- tagList(
                                 "GO", "MA", "MG", "MS", "MT", "PA", "PB", "PE", "PI", "PR", "RJ",
                                 "RN", "RO", "RR", "RS", "SC", "SE", "SP", "TO"),
                     selected = "SP"),
+        # NOVO: Seletor de município – independente do estado selecionado:
+        uiOutput("municipio_locais_ui"),
         checkboxInput("exibir_legenda_locais", "Exibir Legenda", value = TRUE),
         # NOVOS CHECKBOXES:
         checkboxInput("exibir_significancia_locais", 
@@ -256,6 +258,14 @@ ui <- tagList(
           full_screen = TRUE,
           uiOutput("titulo_mapa_locais"),
           leafletOutput("mapa_locais", height = "80vh")
+        ),
+        # Espaço entre os cards:
+        br(), br(),
+        # Card da tabela:
+        bslib::card(
+          full_screen = TRUE,
+          uiOutput("titulo_detalhes_municipio"),
+          DT::dataTableOutput("detalhes_municipio")
         )
       )
     )
@@ -991,7 +1001,7 @@ server <- function(input, output, session) {
     cat("FIM DO RESUMO\n")
   }
   
-  # Função para sumarizar o modelo GWR Multiscale de forma detalhada
+  # Função para sumarizar o modelo GWR Basico de forma detalhada
   summary_gwr_basic <- function(modelo) {
     cat("Resumo do Modelo GWR Basic \n")
     cat("----------------------------------\n")
@@ -1135,6 +1145,17 @@ server <- function(input, output, session) {
     )
   })
   
+  output$municipio_locais_ui <- renderUI({
+    req(sf_escolhido_locais())
+    df <- sf::st_drop_geometry(sf_escolhido_locais())
+    # Use distinct para obter os municípios únicos
+    df <- df %>% distinct(`Código.Município`, `Nome.Município`, Sigla_UF)
+    choices_amigaveis <- paste0(df$`Nome.Município`, " (", df$Sigla_UF, ")")
+    selectInput("municipio_locais", "Selecione o Município:", 
+                choices = setNames(df$`Código.Município`, choices_amigaveis),
+                selected = NULL,
+                width = "100%")
+  })
   
   # Renderizar o mapa base (vazio) do painel "Modelos Locais" apenas uma vez
   output$mapa_locais <- renderLeaflet({
@@ -1303,7 +1324,18 @@ server <- function(input, output, session) {
     }
   })
   
-  
+  output$titulo_detalhes_municipio <- renderUI({
+    req(sf_escolhido_locais(), input$municipio_locais)
+    df <- sf::st_drop_geometry(sf_escolhido_locais())
+    df_mun <- df %>% filter(`Código.Município` == input$municipio_locais)
+    if(nrow(df_mun) > 0) {
+      nome <- df_mun$`Nome.Município`[1]
+      uf <- df_mun$Sigla_UF[1]
+      h4(paste0("Análise das variáveis locais no município '", nome, " (", uf, ")'"))
+    } else {
+      NULL
+    }
+  })
   
   
   output$titulo_mapa_locais <- renderUI({
@@ -1319,6 +1351,72 @@ server <- function(input, output, session) {
     )
     HTML(paste0("<h4>", titulo, "</h4>"))
   })
+  
+  
+  coeficientes_municipio <- reactive({
+    req(sf_escolhido_locais(), input$municipio_locais)
+    df <- sf::st_drop_geometry(sf_escolhido_locais())
+    # Remove as colunas "Código.UF" e "Código.Região"
+    df <- df %>% select(-one_of("Código.UF", "Código.Região"))
+    
+    # Filtra pelo município selecionado (usando "Código.Município")
+    df_mun <- df %>% filter(`Código.Município` == input$municipio_locais)
+    
+    # Seleciona as colunas numéricas que não terminam com _TV ou _SE
+    coef_cols <- names(df_mun)[sapply(df_mun, is.numeric)]
+    coef_cols <- coef_cols[ !grepl("^(yhat|residual)$|_SE$|_TV$", coef_cols) ]
+    
+    if (length(coef_cols) == 0) return(NULL)
+    
+    df_long <- data.frame(
+      Coeficiente = coef_cols,
+      `Valor Coeficiente` = as.numeric(df_mun[1, coef_cols]),
+      stringsAsFactors = FALSE
+    )
+    
+    # Extração dos t-values
+    t_values <- sapply(coef_cols, function(col) {
+      tcol <- paste0(col, "_TV")
+      if (tcol %in% names(df_mun)) {
+        return(as.numeric(df_mun[1, tcol]))
+      } else {
+        return(NA)
+      }
+    })
+    df_long$T_Value <- t_values
+    df_long$Significativo <- ifelse(!is.na(t_values) & abs(t_values) > 1.96, "Sim", "Não")
+    
+    # Obter o modelo selecionado para extrair a largura de banda
+    var_dep <- switch(input$var_dependente_locais,
+                      "Total de Idosos per capita (TIpc)" = "TIpc",
+                      "Mediana de Idade dos Idosos (MII)" = "MII",
+                      "Expectativa de Vida ao Nascer (EdVN)" = "EdVN")
+    modelo <- models[[var_dep]][[input$tipo_modelo_locais]]
+    
+    if (input$tipo_modelo_locais == "GWR Básico") {
+      bw <- modelo$GW.arguments$bw
+      df_long$Largura_de_Banda <- bw
+    } else if (input$tipo_modelo_locais == "GWR Multiscale") {
+      bws <- modelo$GW.arguments$bws
+      print(modelo$GW.arguments$bws)
+      # Se o número de elementos não coincidir com o número de coeficientes, um aviso será gerado.
+      if(length(bws) != nrow(df_long)) {
+        warning("O número de larguras de banda não coincide com o número de coeficientes.")
+      }
+      df_long$Largura_de_Banda <- bws
+    }
+
+    df_long
+  })
+  
+  
+  output$detalhes_municipio <- DT::renderDataTable({
+    req(coeficientes_municipio())
+    DT::datatable(coeficientes_municipio(), options = list(pageLength = 25, scrollX = TRUE))
+  })
+  
+  
+  
     
   #------------#------------#------------#-------------------------------
   #------------ PAINEL 6 - Análise de Documento PDF LADO SERVIDOR -------

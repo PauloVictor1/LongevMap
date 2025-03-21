@@ -641,15 +641,22 @@ server <- function(input, output, session) {
   
   # Renderizando a tabela final
   output$DataTable_DE <- DT::renderDataTable({
-    req(input$data_type_DE != "Escolha uma opção...")  # Impede que o código prossiga se a opção padrão estiver selecionada
-    
-    # Valida a existência de dados, caso contrário mostra uma mensagem amigável
+    req(input$data_type_DE != "Escolha uma opção...")
     validate(
       need(!is.null(df_Final()), "Nenhuma tabela a ser exibida.")
     )
     
-    DT::datatable(df_Final(), escape = FALSE)
-  }, options = list(scrollX = TRUE))
+    # Identificar quais colunas são numéricas
+    numeric_cols <- which(sapply(df_Final(), is.numeric))
+    
+    # Construir datatable e formatar arredondando em 3 casas
+    DT::datatable(
+      df_Final(),
+      escape = FALSE,
+      options = list(scrollX = TRUE)
+    ) %>%
+      DT::formatRound(columns = numeric_cols, digits = 5)
+  })
   
   # Alterando para renderUI para exibir uma mensagem amigável
   output$DataTable_DE_UI <- renderUI({
@@ -850,9 +857,17 @@ server <- function(input, output, session) {
   
   # Código para gerar a tabela resumo abaixo do gráfico de scatterplot
   output$informacao_tabela_RM <- DT::renderDataTable({
-    req(df_RM_Info())  # Certifica-se de que a tabela existe
+    req(df_RM_Info())
     
-    DT::datatable(df_RM_Info(), options = list(pageLength = 5, scrollX = TRUE))
+    # 1) Identificar colunas numéricas
+    numeric_cols <- which(sapply(df_RM_Info(), is.numeric))
+    
+    # 2) Apresentar a tabela com arredondamento
+    DT::datatable(
+      df_RM_Info(),
+      options = list(pageLength = 5, scrollX = TRUE)
+    ) %>%
+      DT::formatRound(columns = numeric_cols, digits = 5)
   })
   
   #------------#------------#------------#------------------------------
@@ -1494,7 +1509,18 @@ server <- function(input, output, session) {
   
   output$detalhes_municipio <- DT::renderDataTable({
     req(coeficientes_municipio())
-    DT::datatable(coeficientes_municipio(), options = list(pageLength = 27, scrollX = TRUE))
+    
+    # Vamos salvar em um objeto para facilitar
+    df_det <- coeficientes_municipio()
+    
+    # Identificar colunas numéricas
+    numeric_cols <- which(sapply(df_det, is.numeric))
+    
+    DT::datatable(
+      df_det,
+      options = list(pageLength = 27, scrollX = TRUE)
+    ) %>%
+      DT::formatRound(columns = numeric_cols, digits = 5)
   })
   
   

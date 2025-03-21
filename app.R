@@ -316,6 +316,38 @@ ui <- tagList(
     )
   ),
   
+  #------------#------------#------------#------------------------------
+  #------------ PAINEL 7 - Municípios Aptos ----------------------------
+  #------------#------------#------------#------------------------------
+  
+  
+  nav_panel(
+    title = "Municípios aptos",
+    layout_sidebar(
+      sidebar = sidebar(
+        width = 250,
+        selectInput(
+          "estado_mapa_aptos",
+          "Selecione o Estado:",
+          choices = c(
+            "Escolha uma UF..." = "",
+            "Todos os estados" = "all",
+            "AC", "AL", "AM", "AP", "BA", "CE", "DF", "ES",
+            "GO", "MA", "MG", "MS", "MT", "PA", "PB", "PE", "PI", "PR",
+            "RJ", "RN", "RO", "RR", "RS", "SC", "SE", "SP", "TO"
+          ),
+          selected = "",    # Nenhum selecionado
+          selectize = TRUE
+        ),
+        checkboxInput("show_legend_aptos", "Exibir Legenda", value = TRUE)
+      ),
+      mainPanel(
+        width = 9,
+        leafletOutput("mapa_aptos", height = "100vh")
+      )
+    )
+  ),
+  
   
   # Espaçador e menu de links
   nav_spacer(),
@@ -345,6 +377,10 @@ server <- function(input, output, session) {
   # Carregar as bases de dados
   dados_brutos <- readRDS("data/Mapa_Final3.rds")
   dados_per_capita <- readRDS("data/Mapa_Final_PC.rds")
+  
+  # ---- Carregar a base dos Municípios Aptos ----
+  municipios_aptos <- readRDS("data/Municipios_Aptos_Mapa.rds")
+  estados_aptos <- readRDS("data/Estados_Aptos.rds")
   
   # Carregar os modelos salvos
   model_linear_TIpc <- readRDS("models/model_linear_TIpc.rds")
@@ -1602,7 +1638,143 @@ server <- function(input, output, session) {
     }
   )
   
+  #------------#------------#------------#------------------------------
+  #-------------- PAINEL 7 - Município Aptos LADO SERVIDOR -------------
+  #------------#------------#------------#------------------------------
+  
+  # ---- Mapa vazio inicial do painel “Municípios aptos” ] ----
+  output$mapa_aptos <- renderLeaflet({
+    leaflet() %>%
+      addProviderTiles("CartoDB.Positron") %>%
+      setView(lng = -55, lat = -14, zoom = 4)  # Centralizado no Brasil
+  })
+  
+  # ---- Atualizar o mapa sempre que o usuário mudar o estado ou a legenda] ----
+  observeEvent({
+    input$estado_mapa_aptos
+    input$show_legend_aptos
+  }, {
+    
+    # Caso o usuário ainda não tenha selecionado nada (valor == ""), mostramos uma mensagem amistosa
+    if (input$estado_mapa_aptos == "") {
+      leafletProxy("mapa_aptos") %>%
+        clearShapes() %>%
+        clearControls() %>%
+        addControl(
+          html = "<div style='font-size:16px; text-align:center;'>
+                <strong>Por favor, selecione um estado para visualizar no mapa.</strong>
+               </div>",
+          position = "topright"
+        )
+      return(NULL)
+    }
+    
+    # Se o usuário escolheu "all" (ou "Todos os estados"):
+    if (input$estado_mapa_aptos == "all") {
+      # Exibimos a base 'estados_aptos.rds'
+      
+      # Escolha uma paleta para perc_aptos (sendo um valor numérico de 0 a 100, por exemplo)
+      pal_estados <- colorNumeric(palette = "YlOrRd", domain = estados_aptos$perc_aptos, na.color = "transparent")
+      
+      leafletProxy("mapa_aptos", data = estados_aptos) %>%
+        clearShapes() %>%
+        clearControls() %>%
+        addPolygons(
+          fillColor   = ~pal_estados(perc_aptos),
+          fillOpacity = 0.7,
+          color       = "white",
+          weight      = 1,
+          # No popup, não existe NM_MUN; mostramos UF e perc_aptos
+          popup = ~paste(
+            "<strong>UF:</strong>", SIGLA_UF, "<br>",
+            "<strong>CNPJ do Fundo Estadual:</strong>", CNPJ, "<br>",
+            "<strong>Percentual de municípios aptos:</strong>", round(perc_aptos, 2), "%"
+          )
+        ) %>%
+        {
+          if (input$show_legend_aptos) {
+            addLegend(.,
+                      pal = pal_estados,
+                      values = ~perc_aptos,
+                      position = "bottomright",
+                      title = "Percentual de municípios aptos"
+            )
+          } else {
+            .
+          }
+        }
+      
+      # Ajustar o zoom para o Brasil inteiro
+      leafletProxy("mapa_aptos") %>%
+        setView(lng = -55, lat = -14, zoom = 4)
+      
+      return(NULL)
+    }
+    
+    # --------------------------------------------
+
+    # Filtrar apenas os municípios com Fundo Apto = "Sim"
+    dados_exibir <- municipios_aptos %>%
+      dplyr::filter(`Fundo Apto para receber doações` == "Sim") %>%
+      dplyr::filter(SIGLA_UF == input$estado_mapa_aptos)
+    
+    pal_mun <- colorFactor("DarkGreen", domain = c("Sim"))
+    
+    leafletProxy("mapa_aptos", data = dados_exibir) %>%
+      clearShapes() %>%
+      clearControls() %>%
+      addPolygons(
+        fillColor   = ~pal_mun(`Fundo Apto para receber doações`),
+        fillOpacity = 0.7,
+        color       = "white",
+        weight      = 1,
+        popup = ~paste(
+          "<strong>Município:</strong>", `NM_MUN`, "<br>",
+          "<strong>Estado:</strong>", SIGLA_UF, "<br>",
+          "<strong>Apto:</strong>", `Fundo Apto para receber doações`, "<br>",
+          "<strong>CNPJ do Fundo:</strong>", CNPJ
+        )
+      ) %>%
+      {
+        if (input$show_legend_aptos) {
+          addLegend(.,
+                    pal = pal_mun,
+                    values = c("Sim"),
+                    position = "bottomright",
+                    title = "Municípios aptos"
+          )
+        } else {
+          .
+        }
+      }
+    
+    # Ajustar o zoom ao estado inteiro – inclusive municípios "Não"
+    dados_bounding <- municipios_aptos %>%
+      dplyr::filter(SIGLA_UF == input$estado_mapa_aptos)
+    
+    if (nrow(dados_bounding) > 0) {
+      bbox <- st_bbox(dados_bounding)
+      leafletProxy("mapa_aptos") %>%
+        fitBounds(
+          lng1 = as.numeric(bbox["xmin"]),
+          lat1 = as.numeric(bbox["ymin"]),
+          lng2 = as.numeric(bbox["xmax"]),
+          lat2 = as.numeric(bbox["ymax"])
+        )
+    } else {
+      # Se não houver dados para esse estado na base
+      leafletProxy("mapa_aptos") %>%
+        setView(lng = -55, lat = -14, zoom = 4)
+    }
+  })
+  
+  
+  
 }
+
+#------------#------------#------------#------------------------------
+#-------------- FINAL LADO SERVIDOR --------------
+#------------#------------#------------#------------------------------
 
 # Executa a aplicação Shiny
 shinyApp(ui = ui, server = server)

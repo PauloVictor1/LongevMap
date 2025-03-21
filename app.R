@@ -1656,14 +1656,13 @@ server <- function(input, output, session) {
   }, {
     
     # Caso o usuário ainda não tenha selecionado nada (valor == ""), mostramos uma mensagem amistosa
-    if (input$estado_mapa_aptos == "") {
+    if (input$estado_mapa_aptos == "Escolha uma UF...") {
+      cat("Nenhum estado selecionado: exibindo a mensagem\n")
       leafletProxy("mapa_aptos") %>%
         clearShapes() %>%
         clearControls() %>%
         addControl(
-          html = "<div style='font-size:16px; text-align:center;'>
-                <strong>Por favor, selecione um estado para visualizar no mapa.</strong>
-               </div>",
+          html = "<div style='font-size: 16px; text-align: center;'><strong>Por favor, selecione uma Unidaed da Federação para visualizar o mapa.</strong></div>",
           position = "topright"
         )
       return(NULL)
@@ -1687,6 +1686,7 @@ server <- function(input, output, session) {
           # No popup, não existe NM_MUN; mostramos UF e perc_aptos
           popup = ~paste(
             "<strong>UF:</strong>", SIGLA_UF, "<br>",
+            "<strong>Fundo Estadual Apto? </strong>", `Fundo Apto para receber doações`, "<br>",
             "<strong>CNPJ do Fundo Estadual:</strong>", CNPJ, "<br>",
             "<strong>Percentual de municípios aptos:</strong>", round(perc_aptos, 2), "%"
           )
